@@ -3,7 +3,8 @@
 # shellcheck disable=SC2154
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+SCRIPT_PATH="$0"; while [[ -L "${SCRIPT_PATH}" ]]; do SCRIPT_PATH="$(readlink "${SCRIPT_PATH}")"; done
+SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "${SCRIPT_DIR}/../lib/common.sh"
 

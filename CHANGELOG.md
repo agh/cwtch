@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.1] - 2025-12-07
+
+### Fixed
+
+- Fixed symlink resolution for Homebrew installation
+
 ## [4.0.0] - 2025-12-07
 
 ### Changed
@@ -78,7 +84,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v4.0.0...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v4.0.1...HEAD
+[4.0.1]: https://github.com/agh/cwtch/compare/v4.0.0...v4.0.1
 [4.0.0]: https://github.com/agh/cwtch/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/agh/cwtch/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/agh/cwtch/compare/v2.0.0...v2.1.0
