@@ -18,9 +18,10 @@ jobs:
           scandir: ./bin ./lib ./scripts
 
       - name: shfmt
-        uses: mvdan/sh@v0.7
-        with:
-          shfmt: true
+        run: |
+          curl -sS https://webinstall.dev/shfmt | bash
+          export PATH="$HOME/.local/bin:$PATH"
+          shfmt -d -i 2 -ci bin/ lib/ scripts/
 
   test:
     runs-on: ubuntu-latest
@@ -34,3 +35,40 @@ jobs:
 
       - name: Run tests
         run: bats tests/
+
+  e2e:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install jq bats-core
+
+      - name: Run unit tests on macOS
+        run: bats tests/
+
+      - name: E2E - help output
+        run: bin/cwtch --help
+
+      - name: E2E - profile list (empty)
+        run: |
+          output=$(bin/cwtch profile list)
+          [[ "$output" == *"No profiles saved"* ]]
+
+      - name: E2E - profile current (none)
+        run: |
+          output=$(bin/cwtch profile current)
+          [[ "$output" == "(none)" ]]
+
+      - name: E2E - save and list API key profile
+        run: |
+          echo "sk-ant-test-key" | bin/cwtch profile save-key testapi
+          output=$(bin/cwtch profile list)
+          [[ "$output" == *"testapi"* ]]
+          [[ "$output" == *"api-key"* ]]
+
+      - name: E2E - status shows profile
+        run: |
+          output=$(bin/cwtch status)
+          [[ "$output" == *"Profile: testapi"* ]]
+          [[ "$output" == *"api-key"* ]]
