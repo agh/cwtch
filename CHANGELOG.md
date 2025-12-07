@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2025-12-07
+
+### Added
+
+- `status` command to show usage (5h/7d utilization) for all saved accounts
+- `lib/common.sh` for shared functions (enables future utilities)
+- `jq` dependency for JSON parsing
+
+### Changed
+
+- Refactored script to source shared library
+
 ## [2.0.0] - 2025-12-07
 
 ### Added
@@ -36,6 +48,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/claude-utils/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/agh/claude-utils/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/agh/claude-utils/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/agh/claude-utils/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/agh/claude-utils/releases/tag/v1.0.0

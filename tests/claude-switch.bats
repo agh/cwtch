@@ -133,6 +133,12 @@ teardown() {
   [[ "$stderr" == *"not found"* ]]
 }
 
+@test "status shows no accounts when empty" {
+  run claude-switch.sh status
+  [[ "$status" -eq 0 ]]
+  [[ "$output" == *"No accounts saved"* ]]
+}
+
 @test "unknown command shows error" {
   run --separate-stderr claude-switch.sh badcommand
   [[ "$status" -eq 1 ]]

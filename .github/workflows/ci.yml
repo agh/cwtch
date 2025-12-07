@@ -15,7 +15,7 @@ jobs:
       - name: shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: scripts
+          scandir: ./scripts ./lib
 
       - name: shfmt
         uses: mvdan/sh@v0.7
@@ -27,10 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install bats
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y bats
+          sudo apt-get install -y bats jq
 
       - name: Run tests
         run: bats tests/

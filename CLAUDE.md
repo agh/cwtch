@@ -15,9 +15,11 @@ Utilities for managing Claude Code workflows, including account switching for Ma
 ## Repository Structure
 
 ```
-claude/
+claude-utils/
 ├── .github/workflows/
 │   └── ci.yml              # GitHub Actions CI
+├── lib/
+│   └── common.sh           # Shared functions
 ├── scripts/
 │   ├── claude-switch.sh    # Switch between Claude accounts
 │   └── install.sh          # Install scripts to PATH
@@ -42,7 +44,12 @@ claude-switch use personal
 
 # List all accounts
 claude-switch list
+
+# Show usage status for all accounts
+claude-switch status
 ```
+
+**Dependencies:** `jq` (for JSON parsing in status command)
 
 ## Common Commands
 
