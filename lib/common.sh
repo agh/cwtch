@@ -3,8 +3,9 @@
 # shellcheck disable=SC2034
 
 readonly CLAUDE_DIR="${HOME}/.claude"
-readonly ACCOUNTS_DIR="${HOME}/.claude-accounts"
-readonly CURRENT_FILE="${ACCOUNTS_DIR}/.current"
+readonly CWTCH_DIR="${HOME}/.cwtch"
+readonly ACCOUNTS_DIR="${CWTCH_DIR}/profiles"
+readonly CURRENT_FILE="${CWTCH_DIR}/.current"
 readonly KEYCHAIN_SVC="Claude Code-credentials"
 readonly USAGE_API="https://api.anthropic.com/api/oauth/usage"
 

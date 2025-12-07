@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [4.0.0] - 2025-12-07
+
+### Changed
+
+- **BREAKING**: Profile storage moved from `~/.claude-accounts/` to `~/.cwtch/profiles/`
+
 ## [3.0.0] - 2025-12-07
 
 ### Added
@@ -72,7 +78,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v3.0.0...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v4.0.0...HEAD
+[4.0.0]: https://github.com/agh/cwtch/compare/v3.0.0...v4.0.0
 [3.0.0]: https://github.com/agh/cwtch/compare/v2.1.0...v3.0.0
 [2.1.0]: https://github.com/agh/cwtch/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/agh/cwtch/compare/v1.0.0...v2.0.0

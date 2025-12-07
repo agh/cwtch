@@ -69,15 +69,16 @@ cwtch status
 
 ## Profile Storage
 
-Profiles are stored in `~/.claude-accounts/`:
+Profiles are stored in `~/.cwtch/`:
 
 ```
-~/.claude-accounts/
+~/.cwtch/
 ├── .current          # Name of active profile
-├── work/             # OAuth profile
-├── personal/         # OAuth profile
-├── myapi/            # API key profile
-└── ...
+└── profiles/
+    ├── work/         # OAuth profile
+    ├── personal/     # OAuth profile
+    ├── myapi/        # API key profile
+    └── ...
 ```
 
 **OAuth profiles** (from Claude Max subscription):

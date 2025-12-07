@@ -68,8 +68,8 @@ teardown() {
   run cwtch profile save work
   [[ "$status" -eq 0 ]]
   [[ "$output" == *"Saved 'work'"* ]]
-  [[ -d "${HOME}/.claude-accounts/work" ]]
-  [[ -f "${HOME}/.claude-accounts/work/.credential" ]]
+  [[ -d "${HOME}/.cwtch/profiles/work" ]]
+  [[ -f "${HOME}/.cwtch/profiles/work/.credential" ]]
 }
 
 @test "profile list shows saved profile" {
@@ -119,7 +119,7 @@ teardown() {
   cwtch profile save todelete
   run cwtch profile delete todelete
   [[ "$status" -eq 0 ]]
-  [[ ! -d "${HOME}/.claude-accounts/todelete" ]]
+  [[ ! -d "${HOME}/.cwtch/profiles/todelete" ]]
 }
 
 @test "profile delete fails for nonexistent profile" {
@@ -155,7 +155,7 @@ teardown() {
   [[ "$status" -eq 0 ]]
   [[ "$output" == *"apitest"* ]]
   [[ "$output" == *"api-key"* ]]
-  [[ -f "${HOME}/.claude-accounts/apitest/.apikey" ]]
+  [[ -f "${HOME}/.cwtch/profiles/apitest/.apikey" ]]
 }
 
 @test "profile api-key outputs current api key" {
