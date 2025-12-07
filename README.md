@@ -1,6 +1,8 @@
-# Claude Utilities
+# cwtch
 
-Utilities for managing Claude Code workflows.
+Cwtch: Helpful utilities for Claude Code. Manage multiple profiles, check your usage, deploy your army of agents. 🤖
+
+> **Note:** This project is not affiliated with, sponsored by, or endorsed by Anthropic PBC.
 
 **Platform:** macOS only (uses Keychain for credential storage). Tested on macOS Tahoe.
 
@@ -10,7 +12,7 @@ Utilities for managing Claude Code workflows.
 
 ```bash
 brew tap agh/cask
-brew install claude-switch
+brew install cwtch
 ```
 
 ### Manual
@@ -19,7 +21,7 @@ brew install claude-switch
 ./scripts/install.sh
 ```
 
-Add to your shell rc file:
+Add to your shell rc file if needed:
 
 ```bash
 export PATH="${HOME}/.local/bin:${PATH}"
@@ -27,22 +29,61 @@ export PATH="${HOME}/.local/bin:${PATH}"
 
 ## Usage
 
+### OAuth Profiles (Claude Max subscription)
+
 ```bash
-# Save current Claude session
-claude-switch save work
+# Save current Claude session as a profile
+cwtch profile save work
 
-# Switch between accounts
-claude-switch use personal
+# Switch to another profile
+cwtch profile use personal
 
-# List all accounts
-claude-switch list
+# Show current profile and usage
+cwtch status
 
-# Show current account
-claude-switch current
-
-# Delete an account
-claude-switch delete old
+# Show usage for all profiles
+cwtch usage
 ```
+
+### API Key Profiles
+
+API key profiles store an Anthropic API key. Note: usage data is only available for OAuth profiles.
+
+```bash
+# Save an API key as a profile (prompts for key)
+cwtch profile save-key myapikey
+
+# Switch to API key profile
+cwtch profile use myapikey
+
+# Output current API key (for use with apiKeyHelper)
+cwtch profile api-key
+```
+
+To use API key profiles with Claude Code, configure `apiKeyHelper` in your settings:
+
+```json
+{
+  "apiKeyHelper": "cwtch profile api-key"
+}
+```
+
+### Common Commands
+
+```bash
+# List all profiles
+cwtch profile list
+
+# Show current profile name
+cwtch profile current
+
+# Delete a profile
+cwtch profile delete old
+```
+
+## Dependencies
+
+- `jq` - for JSON parsing (installed automatically via Homebrew)
 
 ## License
 

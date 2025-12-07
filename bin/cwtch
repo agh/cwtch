@@ -1,0 +1,93 @@
+#!/bin/bash
+# cwtch - Manage Claude Code profiles and usage.
+# shellcheck disable=SC2154
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=../lib/common.sh
+source "${SCRIPT_DIR}/../lib/common.sh"
+
+usage_help() {
+  cat <<EOF
+Usage: cwtch <command> [args]
+
+Commands:
+  status                    Show current profile and its usage
+  usage                     Show usage for all profiles
+  profile list              List all saved profiles
+  profile current           Show current active profile
+  profile save <name>       Save current OAuth session as <name>
+  profile save-key <name>   Save an API key profile as <name>
+  profile use <name>        Switch to profile <name>
+  profile delete <name>     Delete profile <name>
+  profile api-key           Output current profile's API key
+EOF
+}
+
+cmd_profile() {
+  [[ $# -lt 1 ]] && { err "Missing profile subcommand"; usage_help; exit 1; }
+  local sub="$1"; shift
+  case "${sub}" in
+    list) profile_list ;;
+    current) [[ -f "${CURRENT_FILE}" ]] && cat "${CURRENT_FILE}" || echo "(none)" ;;
+    save)     [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_save "$1" ;;
+    save-key) [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_key "$1" ;;
+    use)      [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_use "$1" ;;
+    delete)   [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_delete "$1" ;;
+    api-key)  cmd_apikey ;;
+    *) err "Unknown profile command: ${sub}"; exit 1 ;;
+  esac
+}
+
+cmd_save_key() {
+  local name="$1" key; [[ -t 0 ]] && { read -rsp "API key: " key; echo; } || read -r key
+  [[ -z "${key}" ]] && { err "No API key provided"; exit 1; }; profile_save_key "${name}" "${key}"
+}
+
+cmd_apikey() {
+  local key; key="$(get_current_apikey)" || { err "Current profile is not an API key profile"; exit 1; }
+  echo "${key}"
+}
+
+cmd_status() {
+  local name="(none)" token="" type="oauth"
+  [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
+  is_apikey_profile "${name}" && type="api-key"
+  echo "Profile: ${name} (${type})"
+  if [[ "${type}" == "api-key" ]]; then
+    echo "(API key profiles have no usage data)"
+  else
+    [[ -d "${ACCOUNTS_DIR}/${name}" ]] && token="$(get_token "${ACCOUNTS_DIR}/${name}/.credential")"
+    [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage || echo "(no usage data)"
+  fi
+}
+
+cmd_usage() {
+  mkdir -p "${ACCOUNTS_DIR}"; local found=0
+  for dir in "${ACCOUNTS_DIR}"/*/; do
+    [[ -d "${dir}" ]] || continue; found=1
+    local name="${dir%/}"; name="${name##*/}"
+    echo "${name}:"
+    if is_apikey_profile "${name}"; then
+      echo "  (api-key profile)"
+    else
+      local token; token="$(get_token "${dir}.credential")"
+      [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no credential)"
+    fi
+  done
+  [[ ${found} -eq 0 ]] && echo "No profiles saved."
+}
+
+main() {
+  [[ $# -lt 1 ]] && { usage_help; exit 1; }
+  local cmd="$1"; shift
+  case "${cmd}" in
+    profile) cmd_profile "$@" ;;
+    status) cmd_status ;;
+    usage) cmd_usage ;;
+    -h|--help) usage_help ;;
+    *) err "Unknown: ${cmd}"; usage_help; exit 1 ;;
+  esac
+}
+
+main "$@"

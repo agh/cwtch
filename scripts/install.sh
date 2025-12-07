@@ -1,11 +1,10 @@
 #!/bin/bash
-#
-# Install claude utilities by symlinking to ~/.local/bin
+# Install cwtch by symlinking to ~/.local/bin
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SCRIPT_DIR
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+readonly REPO_DIR
 readonly BIN_DIR="${HOME}/.local/bin"
 
 log() { echo "[install] $*"; }
@@ -13,13 +12,9 @@ log() { echo "[install] $*"; }
 main() {
   mkdir -p "${BIN_DIR}"
 
-  for script in "${SCRIPT_DIR}"/*.sh; do
-    [[ "$(basename "${script}")" == "install.sh" ]] && continue
-    local name="${script%.sh}"; name="${name##*/}"
-    local target="${BIN_DIR}/${name}"
-    ln -sf "${script}" "${target}"
-    log "Linked ${name} -> ${target}"
-  done
+  local target="${BIN_DIR}/cwtch"
+  ln -sf "${REPO_DIR}/bin/cwtch" "${target}"
+  log "Linked cwtch -> ${target}"
 
   if [[ ":${PATH}:" != *":${BIN_DIR}:"* ]]; then
     local rc_file

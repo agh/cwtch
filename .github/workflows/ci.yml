@@ -15,7 +15,7 @@ jobs:
       - name: shellcheck
         uses: ludeeus/action-shellcheck@master
         with:
-          scandir: ./scripts ./lib
+          scandir: ./bin ./lib ./scripts
 
       - name: shfmt
         uses: mvdan/sh@v0.7

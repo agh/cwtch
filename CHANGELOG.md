@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.0.0] - 2025-12-07
+
+### Added
+
+- New CLI structure with subcommands (`cwtch profile`, `cwtch status`, `cwtch usage`)
+- `cwtch status` command shows current profile and its usage
+- `cwtch usage` command shows usage for all profiles
+- API key profile support (`cwtch profile save-key`, `cwtch api-key`)
+- CONTRIBUTING.md with contribution guidelines
+- SECURITY.md with vulnerability reporting procedures
+- GitHub issue and PR templates
+
+### Changed
+
+- **BREAKING**: Renamed project from `claude-utils` to `cwtch`
+- **BREAKING**: Renamed CLI from `claude-switch` to `cwtch`
+- **BREAKING**: Changed command structure (e.g., `claude-switch save` → `cwtch profile save`)
+- Moved main script from `scripts/` to `bin/`
+- Terminology changed from "accounts" to "profiles"
+
+### Removed
+
+- Old `claude-switch` CLI entry point
+
 ## [2.1.0] - 2025-12-07
 
 ### Added
@@ -48,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/claude-utils/compare/v2.1.0...HEAD
-[2.1.0]: https://github.com/agh/claude-utils/compare/v2.0.0...v2.1.0
-[2.0.0]: https://github.com/agh/claude-utils/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/agh/claude-utils/releases/tag/v1.0.0
+[Unreleased]: https://github.com/agh/cwtch/compare/v3.0.0...HEAD
+[3.0.0]: https://github.com/agh/cwtch/compare/v2.1.0...v3.0.0
+[2.1.0]: https://github.com/agh/cwtch/compare/v2.0.0...v2.1.0
+[2.0.0]: https://github.com/agh/cwtch/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/agh/cwtch/releases/tag/v1.0.0

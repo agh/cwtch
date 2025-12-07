@@ -1,95 +1,92 @@
-# CLAUDE.md - Claude Utilities
+# CLAUDE.md - cwtch
 
 ## Overview
 
-Utilities for managing Claude Code workflows, including account switching for Max 20x subscriptions.
+cwtch (Welsh: "cuddle/cozy nook") - Manage Claude Code profiles and usage.
+
+> **Note:** This project is not affiliated with, sponsored by, or endorsed by Anthropic PBC.
 
 **Platform:** macOS only (tested on macOS Tahoe). Uses macOS Keychain for credential storage.
 
 ## Tech Stack
 
-- **Language**: Bash (POSIX-compatible where possible)
+- **Language**: Bash
 - **Platform**: macOS (requires `security` command for Keychain access)
+- **Dependencies**: `jq` for JSON parsing
 - **Standards**: [Doctrine Shell Guide](https://github.com/agh/doctrine/blob/main/guides/languages/shell.md)
 
 ## Repository Structure
 
 ```
-claude-utils/
-├── .github/workflows/
-│   └── ci.yml              # GitHub Actions CI
+cwtch/
+├── .github/
+│   └── workflows/ci.yml    # GitHub Actions CI
+├── bin/
+│   └── cwtch               # Main CLI
 ├── lib/
 │   └── common.sh           # Shared functions
 ├── scripts/
-│   ├── claude-switch.sh    # Switch between Claude accounts
-│   └── install.sh          # Install scripts to PATH
+│   └── install.sh          # Manual installer
 ├── tests/
-│   └── claude-switch.bats  # bats test suite
-├── CLAUDE.md               # This file
-├── .shellcheckrc           # shellcheck configuration
-└── .editorconfig           # Editor settings
+│   └── cwtch.bats          # bats test suite
+└── CLAUDE.md               # This file
 ```
 
 ## Quick Start
 
 ```bash
-# Install utilities to ~/.local/bin
-./scripts/install.sh
+# Install via Homebrew
+brew tap agh/cask && brew install cwtch
 
 # Save current Claude session
-claude-switch save work
+cwtch profile save work
 
-# Switch to another account
-claude-switch use personal
+# Switch profiles
+cwtch profile use personal
 
-# List all accounts
-claude-switch list
+# Check usage across all profiles
+cwtch usage
 
-# Show usage status for all accounts
-claude-switch status
+# Check current profile status
+cwtch status
 ```
-
-**Dependencies:** `jq` (for JSON parsing in status command)
 
 ## Common Commands
 
 | Task | Command |
 |------|---------|
-| Install | `./scripts/install.sh` |
+| Install | `brew install agh/cask/cwtch` |
 | Test | `bats tests/` |
-| Lint | `shellcheck scripts/*.sh` |
-| Format | `shfmt -i 2 -ci -bn -w scripts/*.sh` |
+| Lint | `shellcheck bin/cwtch lib/common.sh` |
 
 ## Code Style
 
-This project follows the [Shell Style Guide](https://github.com/agh/doctrine/blob/main/guides/languages/shell.md).
-
-Key conventions:
 - Scripts **MUST NOT** exceed 100 lines
 - **MUST** use `set -euo pipefail`
 - **MUST** use `[[ ]]` for tests, `$()` for substitution
 - **MUST** use 2-space indentation
-- **MUST** pass shellcheck and shfmt
+- **MUST** pass shellcheck
 
-## Account Storage
+## Profile Storage
 
-Accounts are stored in `~/.claude-accounts/`:
+Profiles are stored in `~/.claude-accounts/`:
 
 ```
 ~/.claude-accounts/
-├── .current          # Name of active account
-├── work/             # Account 1 (includes .credential)
-├── personal/         # Account 2 (includes .credential)
-└── ...               # Unlimited accounts
+├── .current          # Name of active profile
+├── work/             # OAuth profile
+├── personal/         # OAuth profile
+├── myapi/            # API key profile
+└── ...
 ```
 
-Each account directory includes:
+**OAuth profiles** (from Claude Max subscription):
 - Copy of `~/.claude/` session data
-- `.credential` file containing the Keychain credential (chmod 600)
+- `.credential` file (chmod 600)
 
-Switching accounts restores both session data and Keychain credential.
+**API key profiles**:
+- `.apikey` file only (chmod 600)
 
 ## Related Projects
 
-- [agh/doctrine](https://github.com/agh/doctrine) - Style guides
 - [agh/homebrew-cask](https://github.com/agh/homebrew-cask) - Homebrew tap (`brew tap agh/cask`)
