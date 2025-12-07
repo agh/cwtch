@@ -2,6 +2,8 @@
 
 Utilities for managing Claude Code workflows.
 
+**Platform:** macOS only (uses Keychain for credential storage). Tested on macOS Tahoe.
+
 ## Installation
 
 ### Homebrew (recommended)

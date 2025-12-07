@@ -1,0 +1,25 @@
+{
+  "name": "Claude Utils (Shell)",
+  "image": "debian:bookworm-slim",
+  "features": {
+    "ghcr.io/devcontainers/features/common-utils:2": {
+      "installZsh": false
+    }
+  },
+  "onCreateCommand": "bash .devcontainer/setup.sh",
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "[shellscript]": {
+          "editor.defaultFormatter": "mkhl.shfmt",
+          "editor.formatOnSave": true
+        }
+      },
+      "extensions": [
+        "timonwong.shellcheck",
+        "mkhl.shfmt",
+        "mads-hartmann.bash-ide-vscode"
+      ]
+    }
+  }
+}

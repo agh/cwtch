@@ -4,9 +4,12 @@
 
 Utilities for managing Claude Code workflows, including account switching for Max 20x subscriptions.
 
+**Platform:** macOS only (tested on macOS Tahoe). Uses macOS Keychain for credential storage.
+
 ## Tech Stack
 
 - **Language**: Bash (POSIX-compatible where possible)
+- **Platform**: macOS (requires `security` command for Keychain access)
 - **Standards**: [Doctrine Shell Guide](https://github.com/agh/doctrine/blob/main/guides/languages/shell.md)
 
 ## Repository Structure
@@ -68,10 +71,16 @@ Accounts are stored in `~/.claude-accounts/`:
 ```
 ~/.claude-accounts/
 ├── .current          # Name of active account
-├── work/             # Account 1
-├── personal/         # Account 2
+├── work/             # Account 1 (includes .credential)
+├── personal/         # Account 2 (includes .credential)
 └── ...               # Unlimited accounts
 ```
+
+Each account directory includes:
+- Copy of `~/.claude/` session data
+- `.credential` file containing the Keychain credential (chmod 600)
+
+Switching accounts restores both session data and Keychain credential.
 
 ## Related Projects
 
