@@ -36,6 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/claude/compare/v2.0.0...HEAD
-[2.0.0]: https://github.com/agh/claude/compare/v1.0.0...v2.0.0
-[1.0.0]: https://github.com/agh/claude/releases/tag/v1.0.0
+[Unreleased]: https://github.com/agh/claude-utils/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/agh/claude-utils/compare/v1.0.0...v2.0.0
+[1.0.0]: https://github.com/agh/claude-utils/releases/tag/v1.0.0
