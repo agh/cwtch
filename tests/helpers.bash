@@ -168,6 +168,11 @@ create_mock_repo() {
   echo "${repo_dir}"
 }
 
+# Set mock keychain credential
+set_mock_credential() {
+  echo "$1" > "${HOME}/.mock-keychain-cred"
+}
+
 # Create a valid Cwtchfile
 create_cwtchfile() {
   mkdir -p "${HOME}/.cwtch"
