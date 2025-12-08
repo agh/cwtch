@@ -1,6 +1,24 @@
-# cwtch
+<div align="center">
 
-Manage Claude Code profiles and sync configuration from Git.
+<picture>
+  <img alt="cwtch banner" src="assets/banner.svg" width="600">
+</picture>
+
+```
+                _       _
+   _____      _| |_ ___| |__
+  / __\ \ /\ / / __/ __| '_ \
+ | (__ \ V  V /| || (__| | | |
+  \___| \_/\_/  \__\___|_| |_|
+```
+
+**Manage Claude Code profiles and sync configuration from Git.**
+
+[![CI](https://github.com/agh/cwtch/actions/workflows/ci.yml/badge.svg)](https://github.com/agh/cwtch/actions/workflows/ci.yml)
+
+*cwtch (Welsh): a cuddle or cozy nook*
+
+</div>
 
 > **Note:** This project is not affiliated with, sponsored by, or endorsed by Anthropic PBC.
 

@@ -1,0 +1,243 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 300">
+  <defs>
+    <linearGradient id="skyGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#0c1929"/>
+      <stop offset="40%" style="stop-color:#1a2f4a"/>
+      <stop offset="100%" style="stop-color:#1e3a29"/>
+    </linearGradient>
+    <linearGradient id="mountain1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#374151"/>
+      <stop offset="100%" style="stop-color:#1f2937"/>
+    </linearGradient>
+    <linearGradient id="mountain2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#4b5563"/>
+      <stop offset="100%" style="stop-color:#374151"/>
+    </linearGradient>
+    <linearGradient id="mountain3" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#6b7280"/>
+      <stop offset="100%" style="stop-color:#4b5563"/>
+    </linearGradient>
+    <linearGradient id="snow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#f3f4f6"/>
+      <stop offset="60%" style="stop-color:#e5e7eb"/>
+      <stop offset="100%" style="stop-color:#d1d5db;stop-opacity:0"/>
+    </linearGradient>
+    <radialGradient id="windowGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#fbbf24"/>
+      <stop offset="100%" style="stop-color:#f59e0b"/>
+    </radialGradient>
+    <linearGradient id="textGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#fef3c7"/>
+      <stop offset="50%" style="stop-color:#fcd34d"/>
+      <stop offset="100%" style="stop-color:#fef3c7"/>
+    </linearGradient>
+    <linearGradient id="dragonBody" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#dc2626"/>
+      <stop offset="50%" style="stop-color:#b91c1c"/>
+      <stop offset="100%" style="stop-color:#991b1b"/>
+    </linearGradient>
+    <linearGradient id="dragonWing" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#991b1b"/>
+      <stop offset="100%" style="stop-color:#7f1d1d"/>
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/>
+    </filter>
+    <filter id="dragonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="1200" height="300" fill="url(#skyGrad)"/>
+
+  <!-- Stars -->
+  <g fill="#fff">
+    <circle cx="100" cy="40" r="1.5" opacity="0.8"/><circle cx="200" cy="60" r="1" opacity="0.6"/>
+    <circle cx="350" cy="30" r="1.2" opacity="0.7"/><circle cx="500" cy="50" r="0.8" opacity="0.5"/>
+    <circle cx="650" cy="35" r="1.3" opacity="0.6"/><circle cx="800" cy="55" r="1" opacity="0.7"/>
+    <circle cx="950" cy="25" r="1.5" opacity="0.5"/><circle cx="1050" cy="45" r="1.2" opacity="0.6"/>
+    <circle cx="1150" cy="65" r="0.8" opacity="0.8"/><circle cx="150" cy="80" r="0.8" opacity="0.4"/>
+    <circle cx="450" cy="75" r="1" opacity="0.5"/><circle cx="750" cy="70" r="0.7" opacity="0.6"/>
+  </g>
+
+  <!-- Crescent moon -->
+  <circle cx="1050" cy="70" r="25" fill="#fef3c7" opacity="0.9"/>
+  <circle cx="1040" cy="65" r="25" fill="url(#skyGrad)"/>
+
+  <!-- Distant mountains (layer 1) -->
+  <path d="M0.0,300.0 L9.0,291.1 L18.0,276.4 L27.0,268.3 L36.0,258.0 L45.0,251.7 L54.0,241.2 L63.0,232.6 L72.0,217.4 L81.0,209.5 L90.0,197.2 L99.0,188.4 L108.0,180.0 L117.0,167.4 L126.0,158.4 L135.0,150.7 L144.0,140.2 L153.0,128.7 L162.0,120.4 L171.0,111.3 L180.0,100.0 L191.0,107.9 L202.0,121.3 L213.0,130.9 L224.0,139.2 L235.0,148.3 L246.0,162.4 L257.0,169.1 L268.0,177.7 L279.0,187.7 L290.0,202.1 L301.0,210.6 L312.0,222.0 L323.0,231.5 L334.0,240.2 L345.0,253.3 L356.0,259.1 L367.0,270.4 L378.0,282.5 L389.0,290.9 L400.0,300.0 Z" fill="url(#mountain1)"/>
+  <path d="M300.0,300.0 L310.0,291.8 L320.0,278.6 L330.0,268.5 L340.0,252.7 L350.0,243.1 L360.0,232.6 L370.0,220.2 L380.0,210.3 L390.0,198.5 L400.0,188.7 L410.0,179.8 L420.0,167.2 L430.0,156.3 L440.0,144.5 L450.0,133.8 L460.0,126.1 L470.0,113.7 L480.0,102.5 L490.0,89.6 L500.0,80.0 L510.0,92.0 L520.0,100.5 L530.0,112.4 L540.0,126.3 L550.0,135.7 L560.0,146.3 L570.0,158.0 L580.0,169.9 L590.0,180.6 L600.0,188.4 L610.0,198.1 L620.0,210.8 L630.0,221.5 L640.0,232.0 L650.0,248.1 L660.0,258.7 L670.0,265.6 L680.0,279.2 L690.0,288.2 L700.0,300.0 Z" fill="url(#mountain1)"/>
+  <path d="M600.0,300.0 L610.0,292.7 L620.0,278.7 L630.0,266.8 L640.0,256.2 L650.0,247.9 L660.0,235.4 L670.0,227.1 L680.0,218.5 L690.0,204.9 L700.0,193.3 L710.0,187.4 L720.0,174.1 L730.0,161.3 L740.0,150.6 L750.0,140.5 L760.0,132.6 L770.0,122.8 L780.0,110.7 L790.0,98.7 L800.0,90.0 L810.0,100.0 L820.0,113.2 L830.0,121.6 L840.0,134.3 L850.0,144.3 L860.0,150.5 L870.0,164.7 L880.0,175.0 L890.0,184.7 L900.0,193.6 L910.0,206.4 L920.0,213.5 L930.0,226.1 L940.0,236.7 L950.0,250.7 L960.0,260.7 L970.0,266.7 L980.0,279.0 L990.0,287.0 L1000.0,300.0 Z" fill="url(#mountain1)"/>
+  <path d="M900.0,300.0 L907.5,293.7 L915.0,283.8 L922.5,270.0 L930.0,263.0 L937.5,253.3 L945.0,240.6 L952.5,235.2 L960.0,224.3 L967.5,216.2 L975.0,205.2 L982.5,192.6 L990.0,185.0 L997.5,173.9 L1005.0,169.2 L1012.5,159.4 L1020.0,149.6 L1027.5,137.6 L1035.0,127.1 L1042.5,121.1 L1050.0,110.0 L1057.5,121.4 L1065.0,127.2 L1072.5,138.4 L1080.0,145.9 L1087.5,158.8 L1095.0,168.4 L1102.5,174.5 L1110.0,185.9 L1117.5,195.8 L1125.0,203.6 L1132.5,216.8 L1140.0,223.5 L1147.5,231.6 L1155.0,243.3 L1162.5,254.1 L1170.0,259.8 L1177.5,270.1 L1185.0,284.8 L1192.5,291.7 L1200.0,300.0 Z" fill="url(#mountain1)"/>
+
+  <!-- Snow caps layer 1 -->
+  <path d="M150,115 L180,100 L210,115 L195,125 L165,125 Z" fill="url(#snow)" opacity="0.85"/>
+  <path d="M470,95 L500,80 L530,95 L515,108 L485,108 Z" fill="url(#snow)" opacity="0.85"/>
+  <path d="M770,105 L800,90 L830,105 L815,118 L785,118 Z" fill="url(#snow)" opacity="0.85"/>
+  <path d="M1020,125 L1050,110 L1080,125 L1065,138 L1035,138 Z" fill="url(#snow)" opacity="0.85"/>
+
+  <!-- Middle mountains (layer 2) -->
+  <path d="M50.0,300.0 L60.0,285.1 L70.0,278.8 L80.0,263.4 L90.0,254.4 L100.0,244.5 L110.0,233.9 L120.0,220.4 L130.0,209.3 L140.0,195.3 L150.0,186.3 L160.0,174.7 L170.0,165.7 L180.0,152.9 L190.0,142.4 L200.0,130.0 L210.0,141.1 L220.0,151.2 L230.0,165.7 L240.0,177.0 L250.0,186.0 L260.0,195.7 L270.0,209.4 L280.0,220.6 L290.0,233.7 L300.0,244.0 L310.0,254.7 L320.0,266.5 L330.0,276.4 L340.0,285.2 L350.0,300.0 Z" fill="url(#mountain2)"/>
+  <path d="M250.0,300.0 L260.0,283.9 L270.0,278.0 L280.0,264.4 L290.0,247.9 L300.0,239.3 L310.0,224.1 L320.0,208.9 L330.0,200.8 L340.0,186.5 L350.0,175.6 L360.0,161.6 L370.0,146.1 L380.0,135.9 L390.0,123.9 L400.0,110.0 L410.0,124.4 L420.0,134.6 L430.0,148.1 L440.0,161.7 L450.0,171.6 L460.0,188.0 L470.0,200.3 L480.0,208.6 L490.0,224.6 L500.0,235.8 L510.0,247.2 L520.0,262.8 L530.0,278.2 L540.0,287.7 L550.0,300.0 Z" fill="url(#mountain2)"/>
+  <path d="M750.0,300.0 L761.3,285.0 L772.7,276.0 L784.0,266.0 L795.3,255.2 L806.7,241.4 L818.0,225.1 L829.3,218.9 L840.7,204.6 L852.0,189.7 L863.3,178.0 L874.7,165.9 L886.0,156.8 L897.3,142.4 L908.7,133.3 L920.0,120.0 L932.0,130.3 L944.0,144.2 L956.0,155.7 L968.0,165.7 L980.0,177.3 L992.0,194.3 L1004.0,206.8 L1016.0,213.7 L1028.0,229.5 L1040.0,243.3 L1052.0,254.8 L1064.0,266.8 L1076.0,274.8 L1088.0,289.7 L1100.0,300.0 Z" fill="url(#mountain2)"/>
+
+  <!-- Snow caps layer 2 -->
+  <path d="M175,142 L200,130 L225,142 L212,152 L188,152 Z" fill="url(#snow)" opacity="0.8"/>
+  <path d="M375,122 L400,110 L425,122 L412,132 L388,132 Z" fill="url(#snow)" opacity="0.8"/>
+  <path d="M895,132 L920,120 L945,132 L932,142 L908,142 Z" fill="url(#snow)" opacity="0.8"/>
+
+  <!-- Foreground hills (layer 3) -->
+  <path d="M100.0,300.0 L115.0,286.0 L130.0,273.6 L145.0,262.5 L160.0,244.5 L175.0,231.6 L190.0,217.2 L205.0,204.5 L220.0,190.7 L235.0,178.3 L250.0,166.7 L265.0,155.5 L280.0,140.0 L294.2,154.2 L308.3,166.1 L322.5,179.5 L336.7,194.4 L350.8,205.7 L365.0,217.4 L379.2,235.5 L393.3,247.4 L407.5,257.3 L421.7,270.2 L435.8,283.6 L450.0,300.0 Z" fill="url(#mountain3)"/>
+  <path d="M800.0,300.0 L815.0,289.4 L830.0,268.8 L845.0,258.4 L860.0,246.5 L875.0,226.2 L890.0,214.3 L905.0,200.7 L920.0,188.9 L935.0,170.9 L950.0,157.2 L965.0,143.1 L980.0,130.0 L994.2,142.2 L1008.3,159.1 L1022.5,174.1 L1036.7,186.3 L1050.8,198.2 L1065.0,216.3 L1079.2,230.7 L1093.3,244.4 L1107.5,256.3 L1121.7,274.1 L1135.8,286.8 L1150.0,300.0 Z" fill="url(#mountain3)"/>
+
+  <!-- Snow caps layer 3 -->
+  <path d="M255,152 L280,140 L305,152 L292,162 L268,162 Z" fill="url(#snow)" opacity="0.75"/>
+  <path d="M955,142 L980,130 L1005,142 L992,152 L968,152 Z" fill="url(#snow)" opacity="0.75"/>
+
+  <!-- Welsh Dragon -->
+  <g transform="translate(880, 55)" filter="url(#dragonGlow)">
+    <!-- Back wing (behind body) -->
+    <path d="M-20,35 Q-50,10 -40,-20 Q-25,-10 -15,0 Q-30,5 -25,15 Q-15,10 -10,20 Q-20,25 -20,35 Z"
+          fill="url(#dragonWing)" opacity="0.7"/>
+
+    <!-- Main body - serpentine dragon -->
+    <path d="M0,50
+             Q20,45 35,35
+             Q50,25 55,15
+             Q60,5 70,0
+             Q80,-5 90,0
+             Q100,5 95,15
+             Q90,25 80,30
+             Q70,35 60,38
+             Q50,42 40,48
+             Q30,55 15,55
+             Q5,55 0,50 Z"
+          fill="url(#dragonBody)"/>
+
+    <!-- Dragon head -->
+    <path d="M90,0
+             Q95,-8 105,-10
+             Q115,-12 120,-5
+             Q125,0 120,8
+             Q115,15 105,15
+             Q100,15 95,12
+             Q92,10 90,5 Z"
+          fill="url(#dragonBody)"/>
+
+    <!-- Snout/jaw -->
+    <path d="M120,-5 Q135,-8 145,-3 Q140,2 130,5 Q125,8 120,8 Q125,2 120,-5 Z"
+          fill="#dc2626"/>
+
+    <!-- Eye -->
+    <circle cx="108" cy="2" r="3" fill="#fbbf24"/>
+    <circle cx="109" cy="1" r="1.5" fill="#000"/>
+
+    <!-- Horns/spines -->
+    <path d="M95,-8 Q98,-18 102,-20 Q100,-12 98,-8" fill="#7f1d1d"/>
+    <path d="M102,-10 Q106,-22 112,-25 Q108,-15 105,-10" fill="#7f1d1d"/>
+
+    <!-- Front wing (in front, spread) -->
+    <path d="M25,35
+             Q10,20 5,0
+             Q8,-15 20,-25
+             Q30,-20 35,-10
+             Q32,-5 30,5
+             Q40,-5 50,-15
+             Q55,-10 55,0
+             Q50,5 45,15
+             Q55,8 65,0
+             Q68,8 65,18
+             Q58,25 50,30
+             Q40,38 30,40
+             Q25,42 25,35 Z"
+          fill="url(#dragonWing)"/>
+
+    <!-- Wing membrane lines -->
+    <g stroke="#991b1b" stroke-width="1" fill="none" opacity="0.5">
+      <path d="M25,35 Q15,15 20,-25"/>
+      <path d="M30,38 Q35,10 50,-15"/>
+      <path d="M40,35 Q50,15 65,0"/>
+    </g>
+
+    <!-- Back spines -->
+    <g fill="#991b1b">
+      <path d="M40,35 L45,28 L50,35"/>
+      <path d="M55,30 L60,22 L65,30"/>
+      <path d="M70,25 L75,18 L80,26"/>
+    </g>
+
+    <!-- Front legs -->
+    <path d="M50,48 Q55,55 52,65 Q50,60 48,55 Q45,50 50,48" fill="#b91c1c"/>
+    <path d="M35,50 Q38,60 35,70 Q33,62 32,55 Q30,52 35,50" fill="#b91c1c"/>
+
+    <!-- Claws -->
+    <g fill="#7f1d1d">
+      <path d="M52,65 L55,70 L50,68 L48,72 L47,66"/>
+      <path d="M35,70 L38,75 L33,73 L31,77 L30,71"/>
+    </g>
+
+    <!-- Tail -->
+    <path d="M0,50 Q-15,55 -30,50 Q-45,45 -55,50 Q-50,48 -40,48 Q-25,48 -10,52 Q-5,53 0,50"
+          fill="url(#dragonBody)"/>
+
+    <!-- Tail spade -->
+    <path d="M-55,50 Q-65,45 -70,50 Q-65,55 -55,50" fill="#b91c1c"/>
+
+    <!-- Fire breath -->
+    <g opacity="0.6">
+      <path d="M145,-3 Q155,-5 165,0 Q160,5 155,3 Q150,5 145,2" fill="#f97316"/>
+      <path d="M155,-2 Q165,-3 175,2 Q168,6 162,4 Q155,5 152,1" fill="#fbbf24" opacity="0.7"/>
+    </g>
+  </g>
+
+  <!-- Cottage -->
+  <g transform="translate(530, 195)">
+    <ellipse cx="40" cy="85" rx="55" ry="8" fill="#000" opacity="0.2"/>
+    <rect x="0" y="30" width="80" height="55" fill="#6b5344" filter="url(#shadow)"/>
+    <rect x="2" y="32" width="76" height="51" fill="#8b7355"/>
+    <g opacity="0.3" fill="#6b5344">
+      <rect x="5" y="40" width="12" height="8" rx="1"/><rect x="20" y="55" width="10" height="6" rx="1"/>
+      <rect x="55" y="42" width="14" height="7" rx="1"/><rect x="45" y="65" width="11" height="6" rx="1"/>
+      <rect x="8" y="70" width="13" height="5" rx="1"/><rect x="65" y="60" width="10" height="8" rx="1"/>
+    </g>
+    <path d="M-8,30 L40,0 L88,30 Z" fill="#3d2e21"/>
+    <path d="M-5,30 L40,3 L85,30 Z" fill="#4a3728"/>
+    <g stroke="#3d2e21" stroke-width="1" opacity="0.5">
+      <line x1="0" y1="28" x2="40" y2="5"/><line x1="40" y1="5" x2="80" y2="28"/>
+      <line x1="10" y1="25" x2="40" y2="8"/><line x1="40" y1="8" x2="70" y2="25"/>
+    </g>
+    <rect x="30" y="50" width="20" height="35" fill="#2d1810"/>
+    <rect x="32" y="52" width="16" height="31" fill="#3d2518"/>
+    <circle cx="44" cy="68" r="2" fill="#d69e2e"/>
+    <g filter="url(#glow)">
+      <rect x="8" y="42" width="16" height="14" fill="url(#windowGlow)"/>
+      <rect x="56" y="42" width="16" height="14" fill="url(#windowGlow)"/>
+    </g>
+    <g stroke="#2d1810" stroke-width="1.5" fill="none">
+      <rect x="8" y="42" width="16" height="14"/><line x1="16" y1="42" x2="16" y2="56"/><line x1="8" y1="49" x2="24" y2="49"/>
+      <rect x="56" y="42" width="16" height="14"/><line x1="64" y1="42" x2="64" y2="56"/><line x1="56" y1="49" x2="72" y2="49"/>
+    </g>
+    <rect x="55" y="5" width="12" height="22" fill="#4a3728"/>
+    <rect x="53" y="3" width="16" height="4" fill="#3d2e21"/>
+    <g fill="#9ca3af">
+      <circle cx="61" cy="-5" r="5" opacity="0.25"/><circle cx="65" cy="-18" r="7" opacity="0.2"/>
+      <circle cx="59" cy="-32" r="6" opacity="0.15"/><circle cx="63" cy="-45" r="5" opacity="0.1"/>
+    </g>
+  </g>
+
+  <!-- Foreground ground -->
+  <ellipse cx="600" cy="320" rx="700" ry="50" fill="#1a3326"/>
+  <ellipse cx="200" cy="310" rx="300" ry="35" fill="#234e35"/>
+  <ellipse cx="1000" cy="315" rx="350" ry="40" fill="#1a3326"/>
+
+  <!-- Text -->
+  <text x="600" y="130" font-family="Georgia, 'Times New Roman', serif" font-size="80" font-weight="700"
+        fill="url(#textGrad)" text-anchor="middle" letter-spacing="12" filter="url(#glow)">cwtch</text>
+  <text x="600" y="165" font-family="system-ui, -apple-system, sans-serif" font-size="16" font-weight="400"
+        fill="#a7b5a0" text-anchor="middle" letter-spacing="6">PROFILES &amp; CONFIG FOR CLAUDE CODE</text>
+</svg>
