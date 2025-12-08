@@ -6,7 +6,7 @@ config_exists() { [[ -f "${CWTCHFILE}" ]]; }
 
 config_get() {
   local key="$1"
-  yq -r ".${key} // empty" "${CWTCHFILE}" 2>/dev/null
+  yq -r ".${key} // \"\"" "${CWTCHFILE}" 2>/dev/null
 }
 
 config_source_count() {
@@ -18,7 +18,7 @@ config_source_count() {
 
 config_source_get() {
   local idx="$1" field="$2"
-  yq -r ".sources[${idx}].${field} // empty" "${CWTCHFILE}" 2>/dev/null | head -1
+  yq -r ".sources[${idx}].${field} // \"\"" "${CWTCHFILE}" 2>/dev/null | head -1
 }
 
 config_source_indices() {
@@ -86,7 +86,7 @@ config_validate() {
   done
 
   local namespaces duplicates
-  namespaces="$(yq -r '.sources[].as // empty' "${CWTCHFILE}" 2>/dev/null | grep -v '^$' | sort)"
+  namespaces="$(yq -r '.sources[].as // ""' "${CWTCHFILE}" 2>/dev/null | grep -v '^$' | sort)"
   duplicates="$(echo "${namespaces}" | uniq -d)"
   if [[ -n "${duplicates}" ]]; then
     err "Cwtchfile: duplicate namespace(s): ${duplicates}"; ((errors++))

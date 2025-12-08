@@ -22,6 +22,7 @@ Usage: cwtch <command> [args]
 
 Commands:
   status                    Show profile, usage, and sync state
+  usage                     Show usage for all profiles
   sync                      Pull sources and build ~/.claude/
   sync init                 Create example Cwtchfile
   sync check                Validate Cwtchfile
@@ -72,6 +73,22 @@ cmd_apikey() {
   echo "${key}"
 }
 
+cmd_usage() {
+  mkdir -p "${PROFILES_DIR}"; local found=0
+  for dir in "${PROFILES_DIR}"/*/; do
+    [[ -d "${dir}" ]] || continue; found=1
+    local name="${dir%/}"; name="${name##*/}"
+    echo "${name}:"
+    if is_apikey_profile "${name}"; then
+      echo "  (api-key profile)"
+    else
+      local token; token="$(get_token "${dir}.credential")"
+      [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no credential)"
+    fi
+  done
+  [[ ${found} -eq 0 ]] && echo "No profiles saved."
+}
+
 cmd_status() {
   local name="(none)" type="oauth" token=""
   [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
@@ -118,10 +135,11 @@ cmd_status() {
 }
 
 main() {
-  [[ $# -lt 1 ]] && { usage_help; exit 1; }
+  [[ $# -lt 1 ]] && { usage_help; exit 0; }
   local cmd="$1"; shift
   case "${cmd}" in
     status) cmd_status ;;
+    usage) cmd_usage ;;
     sync) cmd_sync "$@" ;;
     profile) cmd_profile "$@" ;;
     edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;

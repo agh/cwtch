@@ -14,7 +14,7 @@ teardown() {
 
 @test "shows usage with no arguments" {
   run cwtch
-  [[ "$status" -eq 1 ]]
+  [[ "$status" -eq 0 ]]
   [[ "$output" == *"Usage:"* ]]
 }
 
