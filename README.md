@@ -4,14 +4,6 @@
   <img alt="cwtch banner" src="assets/banner.svg" width="600">
 </picture>
 
-```
-                _       _
-   _____      _| |_ ___| |__
-  / __\ \ /\ / / __/ __| '_ \
- | (__ \ V  V /| || (__| | | |
-  \___| \_/\_/  \__\___|_| |_|
-```
-
 **Manage Claude Code profiles and sync configuration from Git.**
 
 [![CI](https://github.com/agh/cwtch/actions/workflows/ci.yml/badge.svg)](https://github.com/agh/cwtch/actions/workflows/ci.yml)
