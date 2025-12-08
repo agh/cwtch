@@ -2,6 +2,28 @@
 # Shared functions for cwtch.
 # shellcheck disable=SC2034
 
+# Colors - respect NO_COLOR and detect TTY
+if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]] && [[ "${TERM:-}" != "dumb" ]]; then
+  C_RESET='\033[0m'
+  C_BOLD='\033[1m'
+  C_DIM='\033[2m'
+  C_RED='\033[31m'
+  C_GREEN='\033[32m'
+  C_YELLOW='\033[33m'
+  C_BLUE='\033[34m'
+  C_CYAN='\033[36m'
+  C_WHITE='\033[37m'
+else
+  C_RESET='' C_BOLD='' C_DIM='' C_RED='' C_GREEN='' C_YELLOW='' C_BLUE='' C_CYAN='' C_WHITE=''
+fi
+
+# Symbols
+SYM_CHECK="✓"
+SYM_CROSS="✗"
+SYM_ARROW="→"
+SYM_DOT="•"
+SYM_STAR="★"
+
 readonly CLAUDE_DIR="${HOME}/.claude"
 readonly CWTCH_DIR="${HOME}/.cwtch"
 readonly PROFILES_DIR="${CWTCH_DIR}/profiles"
@@ -11,8 +33,11 @@ readonly CURRENT_FILE="${CWTCH_DIR}/.current"
 readonly KEYCHAIN_SVC="Claude Code-credentials"
 readonly USAGE_API="https://api.anthropic.com/api/oauth/usage"
 
-err() { echo "[ERROR] $*" >&2; }
-log() { echo "[cwtch] $*"; }
+err() { echo -e "${C_RED}${SYM_CROSS}${C_RESET} $*" >&2; }
+log() { echo -e "${C_GREEN}${SYM_CHECK}${C_RESET} $*"; }
+info() { echo -e "${C_CYAN}${SYM_DOT}${C_RESET} $*"; }
+header() { echo -e "\n${C_BOLD}${C_WHITE}$*${C_RESET}"; }
+dim() { echo -e "${C_DIM}$*${C_RESET}"; }
 
 is_apikey_profile() { [[ -f "${PROFILES_DIR}/$1/.apikey" ]]; }
 
@@ -56,10 +81,13 @@ profile_list() {
     [[ -d "${dir}" ]] || continue; found=1
     local name="${dir%/}"; name="${name##*/}"
     local type="oauth"; is_apikey_profile "${name}" && type="api-key"
-    local marker="  "; [[ "${name}" == "${current}" ]] && marker="* "
-    echo "${marker}${name} (${type})$( [[ "${name}" == "${current}" ]] && echo " active" )"
+    if [[ "${name}" == "${current}" ]]; then
+      echo -e "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}${name}${C_RESET} ${C_DIM}(${type})${C_RESET} ${C_GREEN}active${C_RESET}"
+    else
+      echo -e "    ${name} ${C_DIM}(${type})${C_RESET}"
+    fi
   done
-  [[ ${found} -eq 0 ]] && echo "No profiles saved."; return 0
+  [[ ${found} -eq 0 ]] && dim "  No profiles saved."; return 0
 }
 
 profile_save() {

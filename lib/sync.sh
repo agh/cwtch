@@ -30,12 +30,12 @@ sync_repo() {
 
   mkdir -p "${SOURCES_DIR}"
   if [[ -d "${path}/.git" ]]; then
-    log "Updating ${repo}..." >&2
+    info "Updating ${repo}..." >&2
     git -C "${path}" fetch origin "${ref}" --quiet 2>/dev/null || { err "Failed to fetch ${repo}"; return 1; }
     git -C "${path}" checkout "${ref}" --quiet 2>/dev/null || true
     git -C "${path}" reset --hard "origin/${ref}" --quiet 2>/dev/null || true
   else
-    log "Cloning ${repo}..." >&2
+    info "Cloning ${repo}..." >&2
     git clone --branch "${ref}" --depth 1 --quiet "${url}" "${path}" 2>/dev/null || { err "Failed to clone ${repo}"; return 1; }
   fi
   echo "${path}"
@@ -100,6 +100,8 @@ EOF
 do_sync() {
   config_validate || return 1
 
+  header "Syncing"
+
   local settings_ref claude_md_ref
   settings_ref="$(config_get settings)"
   claude_md_ref="$(config_get claude_md)"
@@ -147,13 +149,25 @@ do_sync() {
     fi
     [[ -n "${mcp}" ]] && merge_mcp "${path}/${mcp}" "${CLAUDE_DIR}/settings.json"
 
-    local summary="${repo}"
-    [[ -n "${namespace}" ]] && summary="${summary} → ${namespace}/"
-    [[ ${cmd_count} -gt 0 ]] && summary="${summary} (${cmd_count} commands)"
-    [[ ${agent_count} -gt 0 ]] && summary="${summary} (${agent_count} agents)"
-    [[ ${hook_count} -gt 0 ]] && summary="${summary} (${hook_count} hooks)"
-    log "${summary}"
+    # Build summary with colors
+    local parts=()
+    [[ ${cmd_count} -gt 0 ]] && parts+=("${cmd_count} commands")
+    [[ ${agent_count} -gt 0 ]] && parts+=("${agent_count} agents")
+    [[ ${hook_count} -gt 0 ]] && parts+=("${hook_count} hooks")
+    [[ -n "${mcp}" ]] && parts+=("mcp")
+
+    local summary=""
+    if [[ ${#parts[@]} -gt 0 ]]; then
+      summary=" ${C_DIM}($(IFS=', '; echo "${parts[*]}"))${C_RESET}"
+    fi
+
+    if [[ -n "${namespace}" ]]; then
+      echo -e "  ${C_GREEN}${SYM_CHECK}${C_RESET} ${repo} ${C_CYAN}${SYM_ARROW}${C_RESET} ${C_BOLD}${namespace}/${C_RESET}${summary}"
+    else
+      echo -e "  ${C_GREEN}${SYM_CHECK}${C_RESET} ${repo}${summary}"
+    fi
   done
 
-  log "Sync complete."
+  echo ""
+  log "Sync complete"
 }

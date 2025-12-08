@@ -16,26 +16,74 @@ source "${SCRIPT_DIR}/../lib/config.sh"
 # shellcheck source=../lib/sync.sh
 source "${SCRIPT_DIR}/../lib/sync.sh"
 
+get_version() {
+  local version_file="${SCRIPT_DIR}/../VERSION"
+  [[ -f "${version_file}" ]] && tr -d '\n' < "${version_file}" || echo "dev"
+}
+
+get_git_sha() {
+  git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown"
+}
+
+check_latest_version() {
+  local latest; latest="$(curl -sf "https://api.github.com/repos/agh/cwtch/releases/latest" 2>/dev/null | jq -r '.tag_name // empty' | sed 's/^v//')"
+  echo "${latest}"
+}
+
+version_gt() {
+  # Returns 0 if $1 > $2 using semantic versioning
+  [[ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -1)" != "$1" ]]
+}
+
+cmd_version() {
+  local version; version="$(get_version)"
+  local sha; sha="$(get_git_sha)"
+
+  echo -e "${C_BOLD}cwtch${C_RESET} ${C_CYAN}v${version}${C_RESET} ${C_DIM}(${sha})${C_RESET}"
+  echo ""
+
+  # Check for updates
+  echo -e "${C_DIM}Checking for updates...${C_RESET}"
+  local latest; latest="$(check_latest_version)"
+  if [[ -n "${latest}" ]]; then
+    if version_gt "${latest}" "${version}"; then
+      echo -e "${C_YELLOW}${SYM_ARROW}${C_RESET} New version available: ${C_GREEN}v${latest}${C_RESET}"
+      echo ""
+      echo -e "  Update with: ${C_CYAN}brew upgrade cwtch${C_RESET}"
+    else
+      echo -e "${C_GREEN}${SYM_CHECK}${C_RESET} You're running the latest version"
+    fi
+  else
+    dim "  Could not check for updates"
+  fi
+  echo ""
+}
+
 usage_help() {
-  cat <<EOF
-Usage: cwtch <command> [args]
-
-Commands:
-  status                    Show profile, usage, and sync state
-  usage                     Show usage for all profiles
-  sync                      Pull sources and build ~/.claude/
-  sync init                 Create example Cwtchfile
-  sync check                Validate Cwtchfile
-
-  profile list              List saved profiles
-  profile save <name>       Save current credential as profile
-  profile save-key <name>   Save API key profile
-  profile use <name>        Switch to profile
-  profile delete <name>     Delete a profile
-  profile api-key           Output current profile's API key
-
-  edit                      Edit ~/.cwtch/Cwtchfile
-EOF
+  local version; version="$(get_version)"
+  echo -e "${C_BOLD}cwtch${C_RESET} ${C_DIM}v${version} — profiles & config for Claude Code${C_RESET}"
+  echo ""
+  echo -e "${C_BOLD}USAGE${C_RESET}"
+  echo -e "  cwtch ${C_CYAN}<command>${C_RESET} [args]"
+  echo ""
+  echo -e "${C_BOLD}COMMANDS${C_RESET}"
+  echo -e "  ${C_CYAN}status${C_RESET}                 Show profile, usage, and sync state"
+  echo -e "  ${C_CYAN}usage${C_RESET}                  Show usage for all profiles"
+  echo ""
+  echo -e "  ${C_CYAN}sync${C_RESET}                   Pull sources and build ~/.claude/"
+  echo -e "  ${C_CYAN}sync init${C_RESET}              Create example Cwtchfile"
+  echo -e "  ${C_CYAN}sync check${C_RESET}             Validate Cwtchfile"
+  echo ""
+  echo -e "  ${C_CYAN}profile list${C_RESET}           List saved profiles"
+  echo -e "  ${C_CYAN}profile save${C_RESET} <name>    Save current credential as profile"
+  echo -e "  ${C_CYAN}profile save-key${C_RESET} <n>   Save API key profile"
+  echo -e "  ${C_CYAN}profile use${C_RESET} <name>     Switch to profile"
+  echo -e "  ${C_CYAN}profile delete${C_RESET} <name>  Delete a profile"
+  echo -e "  ${C_CYAN}profile api-key${C_RESET}        Output current profile's API key"
+  echo ""
+  echo -e "  ${C_CYAN}edit${C_RESET}                   Edit Cwtchfile"
+  echo -e "  ${C_CYAN}version${C_RESET}                Check version and updates"
+  echo ""
 }
 
 cmd_sync() {
@@ -74,64 +122,107 @@ cmd_apikey() {
 }
 
 cmd_usage() {
-  mkdir -p "${PROFILES_DIR}"; local found=0
+  mkdir -p "${PROFILES_DIR}"; local found=0 current=""
+  [[ -f "${CURRENT_FILE}" ]] && current="$(cat "${CURRENT_FILE}")"
+  header "Usage by Profile"
   for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue; found=1
     local name="${dir%/}"; name="${name##*/}"
-    echo "${name}:"
+    local marker="" suffix=""
+    [[ "${name}" == "${current}" ]] && marker="${C_GREEN}${SYM_STAR}${C_RESET} " && suffix=" ${C_GREEN}active${C_RESET}"
     if is_apikey_profile "${name}"; then
-      echo "  (api-key profile)"
+      echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(api-key)${C_RESET}"
     else
       local token; token="$(get_token "${dir}.credential")"
-      [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no credential)"
+      if [[ -n "${token}" ]]; then
+        local usage_data; usage_data="$(fetch_usage "${token}" 2>/dev/null)" || true
+        if [[ -n "${usage_data}" ]]; then
+          local u5 u7 r5 r7
+          u5="$(echo "${usage_data}" | jq -r '.five_hour.utilization // 0 | floor')"
+          u7="$(echo "${usage_data}" | jq -r '.seven_day.utilization // 0 | floor')"
+          r5="$(echo "${usage_data}" | jq -r '.five_hour.resets_at // empty | .[0:16] | sub("T";" ")')"
+          r7="$(echo "${usage_data}" | jq -r '.seven_day.resets_at // empty | .[0:16] | sub("T";" ")')"
+          local c5="${C_GREEN}" c7="${C_GREEN}"
+          [[ ${u5} -ge 50 ]] && c5="${C_YELLOW}"; [[ ${u5} -ge 80 ]] && c5="${C_RED}"
+          [[ ${u7} -ge 50 ]] && c7="${C_YELLOW}"; [[ ${u7} -ge 80 ]] && c7="${C_RED}"
+          echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix}"
+          echo -e "    ${C_DIM}5h:${C_RESET} ${c5}${u5}%${C_RESET}  ${C_DIM}7d:${C_RESET} ${c7}${u7}%${C_RESET}"
+        else
+          echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(no data)${C_RESET}"
+        fi
+      else
+        echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(no credential)${C_RESET}"
+      fi
     fi
   done
-  [[ ${found} -eq 0 ]] && echo "No profiles saved."; true
+  [[ ${found} -eq 0 ]] && dim "  No profiles saved."
+  echo ""; true
 }
 
 cmd_status() {
+  local version; version="$(get_version)"
+  echo -e "${C_BOLD}cwtch${C_RESET} ${C_DIM}v${version}${C_RESET}"
+
   local name="(none)" type="oauth" token=""
   [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
   is_apikey_profile "${name}" && type="api-key"
 
-  echo "Profile: ${name} (${type})"
-  if [[ "${name}" != "(none)" ]]; then
+  # Profile section
+  header "Profile"
+  if [[ "${name}" == "(none)" ]]; then
+    echo -e "  ${C_DIM}No profile active${C_RESET}"
+  else
+    echo -e "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}${name}${C_RESET} ${C_DIM}(${type})${C_RESET}"
     if [[ "${type}" == "api-key" ]]; then
-      echo "  (API key profiles have no usage data)"
+      dim "    API key profiles have no usage data"
     else
       token="$(get_token "${PROFILES_DIR}/${name}/.credential" 2>/dev/null)" || true
       if [[ -n "${token}" ]]; then
-        fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no usage data)"
+        local usage_data; usage_data="$(fetch_usage "${token}" 2>/dev/null)" || true
+        if [[ -n "${usage_data}" ]]; then
+          local u5 u7 r5 r7
+          u5="$(echo "${usage_data}" | jq -r '.five_hour.utilization // 0 | floor')"
+          u7="$(echo "${usage_data}" | jq -r '.seven_day.utilization // 0 | floor')"
+          r5="$(echo "${usage_data}" | jq -r '.five_hour.resets_at // empty | .[0:16] | sub("T";" ")')"
+          r7="$(echo "${usage_data}" | jq -r '.seven_day.resets_at // empty | .[0:16] | sub("T";" ")')"
+          # Color based on usage level
+          local c5="${C_GREEN}" c7="${C_GREEN}"
+          [[ ${u5} -ge 50 ]] && c5="${C_YELLOW}"; [[ ${u5} -ge 80 ]] && c5="${C_RED}"
+          [[ ${u7} -ge 50 ]] && c7="${C_YELLOW}"; [[ ${u7} -ge 80 ]] && c7="${C_RED}"
+          echo -e "    ${C_DIM}5h:${C_RESET}  ${c5}${u5}%${C_RESET} ${C_DIM}resets ${r5} UTC${C_RESET}"
+          echo -e "    ${C_DIM}7d:${C_RESET}  ${c7}${u7}%${C_RESET} ${C_DIM}resets ${r7} UTC${C_RESET}"
+        else
+          dim "    Could not fetch usage data"
+        fi
       else
-        echo "  (no credential)"
+        dim "    No credential found"
       fi
     fi
   fi
 
-  echo ""
+  # Sources section
+  header "Sources"
   if config_exists; then
-    local source_count; source_count="$(config_source_count)"
-    echo "Sources: ${source_count} configured"
     local idx
     for idx in $(config_source_indices); do
       local repo as; repo="$(config_source_get "${idx}" repo)"; as="$(config_source_get "${idx}" as)"
       local path; path="$(repo_local_path "${repo}")"
       if [[ -d "${path}/.git" ]]; then
         local commit; commit="$(git -C "${path}" log -1 --format='%h' 2>/dev/null || echo '?')"
-        echo "  ${repo} → ${as:-"(no namespace)"} [${commit}]"
+        echo -e "  ${C_GREEN}${SYM_CHECK}${C_RESET} ${repo} ${C_CYAN}${SYM_ARROW}${C_RESET} ${C_BOLD}${as:-"(root)"}${C_RESET} ${C_DIM}[${commit}]${C_RESET}"
       else
-        echo "  ${repo} → ${as:-"(no namespace)"} (not synced)"
+        echo -e "  ${C_YELLOW}${SYM_DOT}${C_RESET} ${repo} ${C_CYAN}${SYM_ARROW}${C_RESET} ${as:-"(root)"} ${C_YELLOW}not synced${C_RESET}"
       fi
     done
     echo ""
-    echo "Config: ${CWTCHFILE}"
+    dim "  Config: ${CWTCHFILE}"
     local overlay; overlay="$(config_profile_overlay "${name}")"
-    [[ -n "${overlay}" ]] && echo "  + overlay: ${overlay}"
-    true
+    [[ -n "${overlay}" ]] && dim "  Overlay: ${overlay}"
   else
-    echo "Sources: not configured"
-    echo "  Run 'cwtch sync init' to get started"
+    dim "  Not configured"
+    echo -e "  Run ${C_CYAN}cwtch sync init${C_RESET} to get started"
   fi
+  echo ""
 }
 
 main() {
@@ -143,6 +234,7 @@ main() {
     sync) cmd_sync "$@" ;;
     profile) cmd_profile "$@" ;;
     edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;
+    version|--version|-v) cmd_version ;;
     -h|--help) usage_help ;;
     *) err "Unknown: ${cmd}"; usage_help; exit 1 ;;
   esac

@@ -15,19 +15,19 @@ teardown() {
 @test "shows usage with no arguments" {
   run cwtch
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"USAGE"* ]] || [[ "$output" == *"Usage:"* ]]
 }
 
 @test "shows usage with --help" {
   run cwtch --help
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"USAGE"* ]] || [[ "$output" == *"Usage:"* ]]
 }
 
 @test "shows usage with -h" {
   run cwtch -h
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Usage:"* ]]
+  [[ "$output" == *"USAGE"* ]] || [[ "$output" == *"Usage:"* ]]
 }
 
 @test "unknown command shows error" {
@@ -39,13 +39,13 @@ teardown() {
 @test "status shows no profile when none active" {
   run cwtch status
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Profile: (none)"* ]]
+  [[ "$output" == *"No profile active"* ]] || [[ "$output" == *"Profile: (none)"* ]]
 }
 
 @test "status shows sources not configured without Cwtchfile" {
   run cwtch status
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Sources: not configured"* ]]
+  [[ "$output" == *"Not configured"* ]] || [[ "$output" == *"Sources: not configured"* ]]
   [[ "$output" == *"cwtch sync init"* ]]
 }
 
@@ -55,7 +55,7 @@ teardown() {
     as: test"
   run cwtch status
   [[ "$status" -eq 0 ]]
-  [[ "$output" == *"Sources: 1 configured"* ]]
+  [[ "$output" == *"test/repo"* ]]
 }
 
 @test "edit command references correct file" {
