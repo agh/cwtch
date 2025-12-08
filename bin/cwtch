@@ -86,7 +86,7 @@ cmd_usage() {
       [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no credential)"
     fi
   done
-  [[ ${found} -eq 0 ]] && echo "No profiles saved."
+  [[ ${found} -eq 0 ]] && echo "No profiles saved."; true
 }
 
 cmd_status() {
