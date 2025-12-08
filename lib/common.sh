@@ -4,7 +4,9 @@
 
 readonly CLAUDE_DIR="${HOME}/.claude"
 readonly CWTCH_DIR="${HOME}/.cwtch"
-readonly ACCOUNTS_DIR="${CWTCH_DIR}/profiles"
+readonly PROFILES_DIR="${CWTCH_DIR}/profiles"
+readonly SOURCES_DIR="${CWTCH_DIR}/sources"
+readonly CWTCHFILE="${CWTCH_DIR}/Cwtchfile"
 readonly CURRENT_FILE="${CWTCH_DIR}/.current"
 readonly KEYCHAIN_SVC="Claude Code-credentials"
 readonly USAGE_API="https://api.anthropic.com/api/oauth/usage"
@@ -12,11 +14,9 @@ readonly USAGE_API="https://api.anthropic.com/api/oauth/usage"
 err() { echo "[ERROR] $*" >&2; }
 log() { echo "[cwtch] $*"; }
 
-is_apikey_profile() { [[ -f "${ACCOUNTS_DIR}/$1/.apikey" ]]; }
+is_apikey_profile() { [[ -f "${PROFILES_DIR}/$1/.apikey" ]]; }
 
 get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -w 2>/dev/null || true; }
-
-save_cred() { echo "$1" > "$2/.credential"; chmod 600 "$2/.credential"; }
 
 restore_cred() {
   local f="$1/.credential" cred
@@ -49,10 +49,10 @@ format_usage() {
 }
 
 profile_list() {
-  mkdir -p "${ACCOUNTS_DIR}"
+  mkdir -p "${PROFILES_DIR}"
   local current="" found=0
   [[ -f "${CURRENT_FILE}" ]] && current="$(cat "${CURRENT_FILE}")"
-  for dir in "${ACCOUNTS_DIR}"/*/; do
+  for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue; found=1
     local name="${dir%/}"; name="${name##*/}"
     local type="oauth"; is_apikey_profile "${name}" && type="api-key"
@@ -63,37 +63,36 @@ profile_list() {
 }
 
 profile_save() {
-  local name="$1" target="${ACCOUNTS_DIR}/${1}" cred
-  mkdir -p "${ACCOUNTS_DIR}"
-  [[ -d "${CLAUDE_DIR}" ]] || { err "No Claude session at ${CLAUDE_DIR}"; exit 1; }
-  cred="$(get_cred)"; [[ -z "${cred}" ]] && { err "No credential in keychain"; exit 1; }
-  rm -rf "${target}"; cp -r "${CLAUDE_DIR}" "${target}"
-  save_cred "${cred}" "${target}"; echo "${name}" > "${CURRENT_FILE}"; log "Saved '${name}' (oauth)"
+  local name="$1" target="${PROFILES_DIR}/${1}" cred
+  mkdir -p "${PROFILES_DIR}"
+  cred="$(get_cred)"; [[ -z "${cred}" ]] && { err "No credential in keychain"; return 1; }
+  mkdir -p "${target}"
+  echo "${cred}" > "${target}/.credential"; chmod 600 "${target}/.credential"
+  echo "${name}" > "${CURRENT_FILE}"; log "Saved credential for '${name}'"
 }
 
 profile_save_key() {
-  local name="$1" key="$2" target="${ACCOUNTS_DIR}/${1}"
+  local name="$1" key="$2" target="${PROFILES_DIR}/${1}"
   mkdir -p "${target}"
   echo "${key}" > "${target}/.apikey"; chmod 600 "${target}/.apikey"
   echo "${name}" > "${CURRENT_FILE}"; log "Saved '${name}' (api-key)"
 }
 
 profile_use() {
-  local name="$1" source="${ACCOUNTS_DIR}/${1}"
-  [[ -d "${source}" ]] || { err "Profile '${name}' not found"; exit 1; }
+  local name="$1" source="${PROFILES_DIR}/${1}"
+  [[ -d "${source}" ]] || { err "Profile '${name}' not found"; return 1; }
   if is_apikey_profile "${name}"; then
     echo "${name}" > "${CURRENT_FILE}"; log "Switched to '${name}' (api-key)"
-    log "Configure Claude Code: apiKeyHelper = \"cwtch api-key\""
   else
-    lsof +D "${CLAUDE_DIR}" &>/dev/null && { err "Claude is running. Exit first."; exit 1; }
-    restore_cred "${source}"; rm -rf "${CLAUDE_DIR}"; cp -r "${source}" "${CLAUDE_DIR}"
-    rm -f "${CLAUDE_DIR}/.credential"; echo "${name}" > "${CURRENT_FILE}"; log "Switched to '${name}' (oauth)"
+    [[ -f "${source}/.credential" ]] || { err "No credential for '${name}'"; return 1; }
+    restore_cred "${source}"
+    echo "${name}" > "${CURRENT_FILE}"; log "Switched to '${name}' (oauth)"
   fi
 }
 
 profile_delete() {
-  local name="$1" target="${ACCOUNTS_DIR}/${1}" cur
-  [[ -d "${target}" ]] || { err "Profile '${name}' not found"; exit 1; }
+  local name="$1" target="${PROFILES_DIR}/${1}" cur
+  [[ -d "${target}" ]] || { err "Profile '${name}' not found"; return 1; }
   rm -rf "${target}"
   [[ -f "${CURRENT_FILE}" ]] && cur="$(cat "${CURRENT_FILE}")" && [[ "${cur}" == "${name}" ]] && rm -f "${CURRENT_FILE}"
   log "Deleted '${name}'"
@@ -102,6 +101,6 @@ profile_delete() {
 get_current_apikey() {
   local name keyfile
   [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")" || return 1
-  keyfile="${ACCOUNTS_DIR}/${name}/.apikey"
+  keyfile="${PROFILES_DIR}/${name}/.apikey"
   if [[ -f "${keyfile}" ]]; then cat "${keyfile}"; else return 1; fi
 }

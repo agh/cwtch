@@ -1,89 +1,78 @@
 # cwtch
 
-Cwtch: Helpful utilities for Claude Code. Manage multiple profiles, check your usage, deploy your army of agents. 🤖
+Manage Claude Code profiles and sync configuration from Git.
 
 > **Note:** This project is not affiliated with, sponsored by, or endorsed by Anthropic PBC.
 
-**Platform:** macOS only (uses Keychain for credential storage). Tested on macOS Tahoe.
+**Platform:** macOS only. Tested on macOS Tahoe.
 
 ## Installation
-
-### Homebrew (recommended)
 
 ```bash
 brew tap agh/cask
 brew install cwtch
 ```
 
-### Manual
+## Quick Start
+
+### Switch Between Accounts
 
 ```bash
-./scripts/install.sh
-```
-
-Add to your shell rc file if needed:
-
-```bash
-export PATH="${HOME}/.local/bin:${PATH}"
-```
-
-## Usage
-
-### OAuth Profiles (Claude Max subscription)
-
-```bash
-# Save current Claude session as a profile
+# Save your current Claude session
 cwtch profile save work
 
-# Switch to another profile
+# Switch profiles
 cwtch profile use personal
 
-# Show current profile and usage
+# Check status
 cwtch status
-
-# Show usage for all profiles
-cwtch usage
 ```
 
-### API Key Profiles
-
-API key profiles store an Anthropic API key. Note: usage data is only available for OAuth profiles.
+### Sync Configuration from Git
 
 ```bash
-# Save an API key as a profile (prompts for key)
-cwtch profile save-key myapikey
+# Create a Cwtchfile
+cwtch sync init
 
-# Switch to API key profile
-cwtch profile use myapikey
+# Edit it to add your sources
+cwtch edit
 
-# Output current API key (for use with apiKeyHelper)
-cwtch profile api-key
+# Pull and build ~/.claude/
+cwtch sync
 ```
 
-To use API key profiles with Claude Code, configure `apiKeyHelper` in your settings:
+Example Cwtchfile:
 
-```json
-{
-  "apiKeyHelper": "cwtch profile api-key"
-}
+```yaml
+sources:
+  - repo: myuser/claude-agents
+    commands: commands/
+    agents: agents/
+    as: personal
 ```
 
-### Common Commands
+## Documentation
 
-```bash
-# List all profiles
-cwtch profile list
+- [Profiles](docs/profiles.md) — OAuth and API key management
+- [Configuration](docs/configuration.md) — Cwtchfile reference and sync details
 
-# Show current profile name
-cwtch profile current
+## Commands
 
-# Delete a profile
-cwtch profile delete old
 ```
+cwtch status              Show profile, usage, and sync state
 
-## Dependencies
+cwtch sync                Pull sources and build ~/.claude/
+cwtch sync init           Create example Cwtchfile
+cwtch sync check          Validate Cwtchfile
+cwtch edit                Edit Cwtchfile
 
-- `jq` - for JSON parsing (installed automatically via Homebrew)
+cwtch profile list        List saved profiles
+cwtch profile save <n>    Save current OAuth credential
+cwtch profile save-key <n> Save API key as profile
+cwtch profile use <n>     Switch to profile
+cwtch profile delete <n>  Delete a profile
+cwtch profile api-key     Output current API key
+```
 
 ## License
 

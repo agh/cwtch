@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.0.0] - 2025-12-07
+
+### Added
+
+- **Configuration sync from Git repositories** — New `cwtch sync` command pulls commands, agents, hooks, and MCP servers from remote repos
+- **Cwtchfile** — Declarative YAML configuration at `~/.cwtch/Cwtchfile`
+- **Namespace-based merging** — Multiple sources coexist via the `as:` field (e.g., `/personal/review`, `/work/deploy`)
+- **MCP server merging** — MCP configurations are deep-merged into `settings.json`
+- **Base settings and CLAUDE.md** — Sync global settings and CLAUDE.md from repositories
+- `cwtch sync init` — Create an example Cwtchfile
+- `cwtch sync check` — Validate Cwtchfile without syncing
+- `cwtch edit` — Open Cwtchfile in your editor
+- `yq` dependency for YAML parsing
+
+### Changed
+
+- **BREAKING**: Profiles now store only credentials, not entire `~/.claude/` directory
+- **BREAKING**: `cwtch profile use` no longer modifies `~/.claude/` — use `cwtch sync` for configuration
+- `cwtch status` now shows sync state alongside profile and usage
+- Architecture refactored to separate identity (credentials) from configuration (agents/commands)
+
+### Removed
+
+- `cwtch usage` command (usage now shown in `cwtch status`)
+
 ## [4.0.3] - 2025-12-07
 
 ### Fixed
@@ -96,7 +121,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v4.0.3...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v5.0.0...HEAD
+[5.0.0]: https://github.com/agh/cwtch/compare/v4.0.3...v5.0.0
 [4.0.3]: https://github.com/agh/cwtch/compare/v4.0.2...v4.0.3
 [4.0.2]: https://github.com/agh/cwtch/compare/v4.0.1...v4.0.2
 [4.0.1]: https://github.com/agh/cwtch/compare/v4.0.0...v4.0.1

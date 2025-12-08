@@ -32,6 +32,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bats jq
+          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+          sudo chmod +x /usr/local/bin/yq
 
       - name: Run tests
         run: bats tests/
@@ -42,7 +44,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install dependencies
-        run: brew install jq bats-core
+        run: brew install jq bats-core yq
 
       - name: Run unit tests on macOS
         run: bats tests/
@@ -72,3 +74,41 @@ jobs:
           output=$(bin/cwtch status)
           [[ "$output" == *"Profile: testapi"* ]]
           [[ "$output" == *"api-key"* ]]
+
+      - name: E2E - sync init creates Cwtchfile
+        run: |
+          bin/cwtch sync init
+          [[ -f ~/.cwtch/Cwtchfile ]]
+          grep -q "sources:" ~/.cwtch/Cwtchfile
+
+      - name: E2E - sync check validates Cwtchfile
+        run: |
+          output=$(bin/cwtch sync check)
+          [[ "$output" == *"Cwtchfile is valid"* ]]
+
+      - name: E2E - status shows sources configured
+        run: |
+          output=$(bin/cwtch status)
+          [[ "$output" == *"Sources: 1 configured"* ]]
+
+      - name: E2E - edit references correct file
+        run: |
+          export EDITOR="echo"
+          output=$(bin/cwtch edit)
+          [[ "$output" == *"/.cwtch/Cwtchfile"* ]]
+
+      - name: E2E - sync with GitHub repo
+        run: |
+          # Create a Cwtchfile that syncs from a real GitHub repo
+          cat > ~/.cwtch/Cwtchfile << 'EOF'
+          sources:
+            - repo: agh/cwtch
+              ref: main
+              as: cwtch-self
+              commands: .github/
+          EOF
+          # Fix heredoc indentation
+          sed -i '' 's/^          //' ~/.cwtch/Cwtchfile
+          bin/cwtch sync
+          # Verify the source was cloned
+          [[ -d ~/.cwtch/sources/agh-cwtch ]]

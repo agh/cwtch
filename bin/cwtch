@@ -1,5 +1,5 @@
 #!/bin/bash
-# cwtch - Manage Claude Code profiles and usage.
+# cwtch - Manage Claude Code profiles and configuration.
 # shellcheck disable=SC2154
 set -euo pipefail
 
@@ -11,22 +11,40 @@ done
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 # shellcheck source=../lib/common.sh
 source "${SCRIPT_DIR}/../lib/common.sh"
+# shellcheck source=../lib/config.sh
+source "${SCRIPT_DIR}/../lib/config.sh"
+# shellcheck source=../lib/sync.sh
+source "${SCRIPT_DIR}/../lib/sync.sh"
 
 usage_help() {
   cat <<EOF
 Usage: cwtch <command> [args]
 
 Commands:
-  status                    Show current profile and its usage
-  usage                     Show usage for all profiles
-  profile list              List all saved profiles
-  profile current           Show current active profile
-  profile save <name>       Save current OAuth session as <name>
-  profile save-key <name>   Save an API key profile as <name>
-  profile use <name>        Switch to profile <name>
-  profile delete <name>     Delete profile <name>
+  status                    Show profile, usage, and sync state
+  sync                      Pull sources and build ~/.claude/
+  sync init                 Create example Cwtchfile
+  sync check                Validate Cwtchfile
+
+  profile list              List saved profiles
+  profile save <name>       Save current credential as profile
+  profile save-key <name>   Save API key profile
+  profile use <name>        Switch to profile
+  profile delete <name>     Delete a profile
   profile api-key           Output current profile's API key
+
+  edit                      Edit ~/.cwtch/Cwtchfile
 EOF
+}
+
+cmd_sync() {
+  if [[ $# -lt 1 ]]; then do_sync; return; fi
+  local sub="$1"; shift
+  case "${sub}" in
+    init) sync_init ;;
+    check) config_check ;;
+    *) err "Unknown sync command: ${sub}"; exit 1 ;;
+  esac
 }
 
 cmd_profile() {
@@ -55,41 +73,58 @@ cmd_apikey() {
 }
 
 cmd_status() {
-  local name="(none)" token="" type="oauth"
+  local name="(none)" type="oauth" token=""
   [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
   is_apikey_profile "${name}" && type="api-key"
-  echo "Profile: ${name} (${type})"
-  if [[ "${type}" == "api-key" ]]; then
-    echo "(API key profiles have no usage data)"
-  else
-    [[ -d "${ACCOUNTS_DIR}/${name}" ]] && token="$(get_token "${ACCOUNTS_DIR}/${name}/.credential")"
-    [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage || echo "(no usage data)"
-  fi
-}
 
-cmd_usage() {
-  mkdir -p "${ACCOUNTS_DIR}"; local found=0
-  for dir in "${ACCOUNTS_DIR}"/*/; do
-    [[ -d "${dir}" ]] || continue; found=1
-    local name="${dir%/}"; name="${name##*/}"
-    echo "${name}:"
-    if is_apikey_profile "${name}"; then
-      echo "  (api-key profile)"
+  echo "Profile: ${name} (${type})"
+  if [[ "${name}" != "(none)" ]]; then
+    if [[ "${type}" == "api-key" ]]; then
+      echo "  (API key profiles have no usage data)"
     else
-      local token; token="$(get_token "${dir}.credential")"
-      [[ -n "${token}" ]] && fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no credential)"
+      token="$(get_token "${PROFILES_DIR}/${name}/.credential" 2>/dev/null)" || true
+      if [[ -n "${token}" ]]; then
+        fetch_usage "${token}" | format_usage | sed 's/^/  /' || echo "  (no usage data)"
+      else
+        echo "  (no credential)"
+      fi
     fi
-  done
-  [[ ${found} -eq 0 ]] && echo "No profiles saved."
+  fi
+
+  echo ""
+  if config_exists; then
+    local source_count; source_count="$(config_source_count)"
+    echo "Sources: ${source_count} configured"
+    local idx
+    for idx in $(config_source_indices); do
+      local repo as; repo="$(config_source_get "${idx}" repo)"; as="$(config_source_get "${idx}" as)"
+      local path; path="$(repo_local_path "${repo}")"
+      if [[ -d "${path}/.git" ]]; then
+        local commit; commit="$(git -C "${path}" log -1 --format='%h' 2>/dev/null || echo '?')"
+        echo "  ${repo} → ${as:-"(no namespace)"} [${commit}]"
+      else
+        echo "  ${repo} → ${as:-"(no namespace)"} (not synced)"
+      fi
+    done
+    echo ""
+    echo "Config: ${CWTCHFILE}"
+    local overlay; overlay="$(config_profile_overlay "${name}")"
+    [[ -n "${overlay}" ]] && echo "  + overlay: ${overlay}"
+    true
+  else
+    echo "Sources: not configured"
+    echo "  Run 'cwtch sync init' to get started"
+  fi
 }
 
 main() {
   [[ $# -lt 1 ]] && { usage_help; exit 1; }
   local cmd="$1"; shift
   case "${cmd}" in
-    profile) cmd_profile "$@" ;;
     status) cmd_status ;;
-    usage) cmd_usage ;;
+    sync) cmd_sync "$@" ;;
+    profile) cmd_profile "$@" ;;
+    edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;
     -h|--help) usage_help ;;
     *) err "Unknown: ${cmd}"; usage_help; exit 1 ;;
   esac
