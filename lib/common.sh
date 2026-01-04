@@ -132,3 +132,44 @@ get_current_apikey() {
   keyfile="${PROFILES_DIR}/${name}/.apikey"
   if [[ -f "${keyfile}" ]]; then cat "${keyfile}"; else return 1; fi
 }
+
+token_expires_at() {
+  local cred_file="$1"
+  [[ -f "${cred_file}" ]] || return 1
+  jq -r '.claudeAiOauth.expiresAt // 0' "${cred_file}" 2>/dev/null
+}
+
+token_needs_refresh() {
+  local cred_file="$1" threshold="${2:-1800000}"  # default 30 min in ms
+  local expires_at now_ms
+  expires_at="$(token_expires_at "${cred_file}")" || return 0
+  now_ms="$(($(date +%s) * 1000))"
+  [[ $((expires_at - now_ms)) -lt ${threshold} ]]
+}
+
+refresh_profile_token() {
+  local name="$1" quiet="${2:-false}"
+  local profile_dir="${PROFILES_DIR}/${name}"
+  local cred_file="${profile_dir}/.credential"
+  [[ -d "${profile_dir}" ]] || { [[ "${quiet}" == "true" ]] || err "Profile '${name}' not found"; return 1; }
+  is_apikey_profile "${name}" && { [[ "${quiet}" == "true" ]] || dim "  ${name}: api-key (no refresh needed)"; return 0; }
+  [[ -f "${cred_file}" ]] || { [[ "${quiet}" == "true" ]] || err "No credential for '${name}'"; return 1; }
+  if ! token_needs_refresh "${cred_file}"; then
+    [[ "${quiet}" == "true" ]] || dim "  ${name}: token still valid"
+    return 0
+  fi
+  local original current_in_keychain
+  [[ -f "${CURRENT_FILE}" ]] && original="$(cat "${CURRENT_FILE}")"
+  current_in_keychain="$(get_cred)"
+  restore_cred "${profile_dir}" || return 1
+  [[ "${quiet}" == "true" ]] || info "${name}: refreshing token..."
+  claude -p "." --max-turns 1 &>/dev/null || { err "Failed to invoke claude"; return 1; }
+  local new_cred; new_cred="$(get_cred)"
+  [[ -n "${new_cred}" ]] || { err "No credential after refresh"; return 1; }
+  echo "${new_cred}" > "${cred_file}"; chmod 600 "${cred_file}"
+  if [[ -n "${original}" ]] && [[ "${original}" != "${name}" ]] && [[ -n "${current_in_keychain}" ]]; then
+    security delete-generic-password -s "${KEYCHAIN_SVC}" &>/dev/null || true
+    security add-generic-password -s "${KEYCHAIN_SVC}" -a "${USER}" -w "${current_in_keychain}"
+  fi
+  [[ "${quiet}" == "true" ]] || log "${name}: token refreshed"
+}

@@ -69,6 +69,7 @@ usage_help() {
   echo -e "${C_BOLD}COMMANDS${C_RESET}"
   echo -e "  ${C_CYAN}status${C_RESET}                 Show profile, usage, and sync state"
   echo -e "  ${C_CYAN}usage${C_RESET}                  Show usage for all profiles"
+  echo -e "  ${C_CYAN}refresh${C_RESET} [name] [-q]    Refresh expired OAuth tokens"
   echo ""
   echo -e "  ${C_CYAN}sync${C_RESET}                   Pull sources and build ~/.claude/"
   echo -e "  ${C_CYAN}sync init${C_RESET}              Create example Cwtchfile"
@@ -119,6 +120,27 @@ cmd_save_key() {
 cmd_apikey() {
   local key; key="$(get_current_apikey)" || { err "Current profile is not an API key profile"; exit 1; }
   echo "${key}"
+}
+
+cmd_refresh() {
+  local quiet=false profiles=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -q|--quiet) quiet=true; shift ;;
+      *) profiles+=("$1"); shift ;;
+    esac
+  done
+  mkdir -p "${PROFILES_DIR}"
+  if [[ ${#profiles[@]} -eq 0 ]]; then
+    for dir in "${PROFILES_DIR}"/*/; do
+      [[ -d "${dir}" ]] || continue
+      local name="${dir%/}"; name="${name##*/}"; profiles+=("${name}")
+    done
+  fi
+  [[ ${#profiles[@]} -eq 0 ]] && { [[ "${quiet}" == "true" ]] || dim "No profiles to refresh."; return 0; }
+  [[ "${quiet}" == "true" ]] || header "Refreshing Tokens"
+  for name in "${profiles[@]}"; do refresh_profile_token "${name}" "${quiet}"; done
+  [[ "${quiet}" == "true" ]] || echo ""
 }
 
 cmd_usage() {
@@ -231,6 +253,7 @@ main() {
   case "${cmd}" in
     status) cmd_status ;;
     usage) cmd_usage ;;
+    refresh) cmd_refresh "$@" ;;
     sync) cmd_sync "$@" ;;
     profile) cmd_profile "$@" ;;
     edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;

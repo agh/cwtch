@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [5.2.0] - 2026-01-03
+
+### Added
+
+- `cwtch refresh` command to automatically refresh expired OAuth tokens
+- Quiet mode (`-q`) for shell startup integration
+- Token expiry checking with 30-minute threshold
+
+### Usage
+
+Add to `~/.zshrc` for automatic token refresh on terminal startup:
+```bash
+cwtch refresh -q 2>/dev/null
+```
+
 ## [5.0.0] - 2025-12-07
 
 ### Added
@@ -118,7 +133,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - bats test suite
 - GitHub Actions CI (shellcheck, shfmt, tests)
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v5.0.0...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v5.2.0...HEAD
+[5.2.0]: https://github.com/agh/cwtch/compare/v5.1.0...v5.2.0
 [5.0.0]: https://github.com/agh/cwtch/compare/v4.0.3...v5.0.0
 [4.0.3]: https://github.com/agh/cwtch/compare/v4.0.2...v4.0.3
 [4.0.2]: https://github.com/agh/cwtch/compare/v4.0.1...v4.0.2
