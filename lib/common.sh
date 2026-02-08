@@ -40,6 +40,7 @@ header() { echo -e "\n${C_BOLD}${C_WHITE}$*${C_RESET}"; }
 dim() { echo -e "${C_DIM}$*${C_RESET}"; }
 
 is_apikey_profile() { [[ -f "${PROFILES_DIR}/$1/.apikey" ]]; }
+is_token_profile() { [[ -f "${PROFILES_DIR}/$1/.token" ]]; }
 
 get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -w 2>/dev/null || true; }
 
@@ -80,7 +81,9 @@ profile_list() {
   for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue; found=1
     local name="${dir%/}"; name="${name##*/}"
-    local type="oauth"; is_apikey_profile "${name}" && type="api-key"
+    local type="oauth"
+    is_apikey_profile "${name}" && type="api-key"
+    is_token_profile "${name}" && type="token"
     if [[ "${name}" == "${current}" ]]; then
       echo -e "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}${name}${C_RESET} ${C_DIM}(${type})${C_RESET} ${C_GREEN}active${C_RESET}"
     else
@@ -106,11 +109,20 @@ profile_save_key() {
   echo "${name}" > "${CURRENT_FILE}"; log "Saved '${name}' (api-key)"
 }
 
+profile_save_token() {
+  local name="$1" token="$2" target="${PROFILES_DIR}/${1}"
+  mkdir -p "${target}"
+  echo "${token}" > "${target}/.token"; chmod 600 "${target}/.token"
+  echo "${name}" > "${CURRENT_FILE}"; log "Saved '${name}' (token)"
+}
+
 profile_use() {
   local name="$1" source="${PROFILES_DIR}/${1}"
   [[ -d "${source}" ]] || { err "Profile '${name}' not found"; return 1; }
   if is_apikey_profile "${name}"; then
     echo "${name}" > "${CURRENT_FILE}"; log "Switched to '${name}' (api-key)"
+  elif is_token_profile "${name}"; then
+    echo "${name}" > "${CURRENT_FILE}"; log "Switched to '${name}' (token)"
   else
     [[ -f "${source}/.credential" ]] || { err "No credential for '${name}'"; return 1; }
     restore_cred "${source}"
@@ -133,6 +145,13 @@ get_current_apikey() {
   if [[ -f "${keyfile}" ]]; then cat "${keyfile}"; else return 1; fi
 }
 
+get_current_token() {
+  local name tokenfile
+  [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")" || return 1
+  tokenfile="${PROFILES_DIR}/${name}/.token"
+  if [[ -f "${tokenfile}" ]]; then cat "${tokenfile}"; else return 1; fi
+}
+
 token_expires_at() {
   local cred_file="$1"
   [[ -f "${cred_file}" ]] || return 1
@@ -147,29 +166,55 @@ token_needs_refresh() {
   [[ $((expires_at - now_ms)) -lt ${threshold} ]]
 }
 
+token_is_expired() {
+  local cred_file="$1"
+  local expires_at now_ms
+  expires_at="$(token_expires_at "${cred_file}")" || return 0
+  now_ms="$(($(date +%s) * 1000))"
+  [[ ${now_ms} -ge ${expires_at} ]]
+}
+
+restore_keychain() {
+  local original="$1" current_in_keychain="$2" name="$3"
+  if [[ -n "${original}" ]] && [[ "${original}" != "${name}" ]] && [[ -n "${current_in_keychain}" ]]; then
+    security delete-generic-password -s "${KEYCHAIN_SVC}" &>/dev/null || true
+    security add-generic-password -s "${KEYCHAIN_SVC}" -a "${USER}" -w "${current_in_keychain}"
+  fi
+}
+
 refresh_profile_token() {
   local name="$1" quiet="${2:-false}"
   local profile_dir="${PROFILES_DIR}/${name}"
   local cred_file="${profile_dir}/.credential"
   [[ -d "${profile_dir}" ]] || { [[ "${quiet}" == "true" ]] || err "Profile '${name}' not found"; return 1; }
   is_apikey_profile "${name}" && { [[ "${quiet}" == "true" ]] || dim "  ${name}: api-key (no refresh needed)"; return 0; }
+  is_token_profile "${name}" && { [[ "${quiet}" == "true" ]] || dim "  ${name}: token (no refresh needed)"; return 0; }
   [[ -f "${cred_file}" ]] || { [[ "${quiet}" == "true" ]] || err "No credential for '${name}'"; return 1; }
   if ! token_needs_refresh "${cred_file}"; then
     [[ "${quiet}" == "true" ]] || dim "  ${name}: token still valid"
     return 0
   fi
-  local original current_in_keychain
+  if token_is_expired "${cred_file}"; then
+    [[ "${quiet}" == "true" ]] || err "${name}: token expired (run 'cwtch profile use ${name}' then '/login')"
+    return 1
+  fi
+  local original="" current_in_keychain
   [[ -f "${CURRENT_FILE}" ]] && original="$(cat "${CURRENT_FILE}")"
   current_in_keychain="$(get_cred)"
   restore_cred "${profile_dir}" || return 1
   [[ "${quiet}" == "true" ]] || info "${name}: refreshing token..."
-  claude -p "." --max-turns 1 &>/dev/null || { err "Failed to invoke claude"; return 1; }
-  local new_cred; new_cred="$(get_cred)"
-  [[ -n "${new_cred}" ]] || { err "No credential after refresh"; return 1; }
-  echo "${new_cred}" > "${cred_file}"; chmod 600 "${cred_file}"
-  if [[ -n "${original}" ]] && [[ "${original}" != "${name}" ]] && [[ -n "${current_in_keychain}" ]]; then
-    security delete-generic-password -s "${KEYCHAIN_SVC}" &>/dev/null || true
-    security add-generic-password -s "${KEYCHAIN_SVC}" -a "${USER}" -w "${current_in_keychain}"
+  if ! claude -p "." --max-turns 1 &>/dev/null; then
+    restore_keychain "${original}" "${current_in_keychain}" "${name}"
+    err "Failed to invoke claude"
+    return 1
   fi
+  local new_cred; new_cred="$(get_cred)"
+  if [[ -z "${new_cred}" ]]; then
+    restore_keychain "${original}" "${current_in_keychain}" "${name}"
+    err "No credential after refresh"
+    return 1
+  fi
+  echo "${new_cred}" > "${cred_file}"; chmod 600 "${cred_file}"
+  restore_keychain "${original}" "${current_in_keychain}" "${name}"
   [[ "${quiet}" == "true" ]] || log "${name}: token refreshed"
 }

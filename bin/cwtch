@@ -76,10 +76,14 @@ usage_help() {
   echo -e "  ${C_CYAN}sync check${C_RESET}             Validate Cwtchfile"
   echo ""
   echo -e "  ${C_CYAN}profile list${C_RESET}           List saved profiles"
-  echo -e "  ${C_CYAN}profile save${C_RESET} <name>    Save current credential as profile"
+  echo -e "  ${C_CYAN}profile setup${C_RESET} <name>   Create & save long-lived token (easiest)"
+  echo -e "  ${C_CYAN}profile save-token${C_RESET} <n> Save existing long-lived token"
   echo -e "  ${C_CYAN}profile save-key${C_RESET} <n>   Save API key profile"
+  echo -e "  ${C_CYAN}profile save${C_RESET} <name>    Save OAuth credential as profile"
   echo -e "  ${C_CYAN}profile use${C_RESET} <name>     Switch to profile"
   echo -e "  ${C_CYAN}profile delete${C_RESET} <name>  Delete a profile"
+  echo -e "  ${C_CYAN}profile env${C_RESET}            Output export for current profile"
+  echo -e "  ${C_CYAN}profile token${C_RESET}          Output current profile's token"
   echo -e "  ${C_CYAN}profile api-key${C_RESET}        Output current profile's API key"
   echo ""
   echo -e "  ${C_CYAN}edit${C_RESET}                   Edit Cwtchfile"
@@ -103,11 +107,15 @@ cmd_profile() {
   case "${sub}" in
     list) profile_list ;;
     current) [[ -f "${CURRENT_FILE}" ]] && cat "${CURRENT_FILE}" || echo "(none)" ;;
-    save)     [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_save "$1" ;;
-    save-key) [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_key "$1" ;;
-    use)      [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_use "$1" ;;
-    delete)   [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_delete "$1" ;;
-    api-key)  cmd_apikey ;;
+    setup)      [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_setup "$1" ;;
+    save)       [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_save "$1" ;;
+    save-key)   [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_key "$1" ;;
+    save-token) [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_token "$1" ;;
+    use)        [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_use "$1" ;;
+    delete)     [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_delete "$1" ;;
+    api-key)    cmd_apikey ;;
+    token)      cmd_token ;;
+    env)        cmd_env ;;
     *) err "Unknown profile command: ${sub}"; exit 1 ;;
   esac
 }
@@ -117,9 +125,48 @@ cmd_save_key() {
   [[ -z "${key}" ]] && { err "No API key provided"; exit 1; }; profile_save_key "${name}" "${key}"
 }
 
+cmd_save_token() {
+  local name="$1" token; [[ -t 0 ]] && { read -rsp "Token: " token; echo; } || read -r token
+  [[ -z "${token}" ]] && { err "No token provided"; exit 1; }; profile_save_token "${name}" "${token}"
+}
+
+cmd_setup() {
+  local name="$1"
+  info "Running claude setup-token..."
+  echo ""
+  local output; output="$(claude setup-token 2>&1)" || { err "Failed to run claude setup-token"; return 1; }
+  echo "${output}"
+  local token; token="$(echo "${output}" | grep -oE 'sk-ant-oat01-[a-zA-Z0-9_-]+')"
+  [[ -z "${token}" ]] && { err "Could not extract token from output"; return 1; }
+  echo ""
+  profile_save_token "${name}" "${token}"
+  echo ""
+  info "To use this profile, run:"
+  echo -e "  ${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
+}
+
 cmd_apikey() {
   local key; key="$(get_current_apikey)" || { err "Current profile is not an API key profile"; exit 1; }
   echo "${key}"
+}
+
+cmd_token() {
+  local token; token="$(get_current_token)" || { err "Current profile is not a token profile"; exit 1; }
+  echo "${token}"
+}
+
+cmd_env() {
+  local name type
+  [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")" || { err "No profile active"; exit 1; }
+  if is_token_profile "${name}"; then
+    local token; token="$(get_current_token)" || { err "No token for '${name}'"; exit 1; }
+    echo "export CLAUDE_CODE_OAUTH_TOKEN='${token}'"
+  elif is_apikey_profile "${name}"; then
+    local key; key="$(get_current_apikey)" || { err "No API key for '${name}'"; exit 1; }
+    echo "export ANTHROPIC_API_KEY='${key}'"
+  else
+    dim "# OAuth profile - no environment variable needed (uses Keychain)"
+  fi
 }
 
 cmd_refresh() {
@@ -154,6 +201,8 @@ cmd_usage() {
     [[ "${name}" == "${current}" ]] && marker="${C_GREEN}${SYM_STAR}${C_RESET} " && suffix=" ${C_GREEN}active${C_RESET}"
     if is_apikey_profile "${name}"; then
       echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(api-key)${C_RESET}"
+    elif is_token_profile "${name}"; then
+      echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(token)${C_RESET}"
     else
       local token; token="$(get_token "${dir}.credential")"
       if [[ -n "${token}" ]]; then
@@ -188,15 +237,21 @@ cmd_status() {
   local name="(none)" type="oauth" token=""
   [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
   is_apikey_profile "${name}" && type="api-key"
+  is_token_profile "${name}" && type="token"
 
   # Profile section
   header "Profile"
   if [[ "${name}" == "(none)" ]]; then
     echo -e "  ${C_DIM}No profile active${C_RESET}"
+    echo ""
+    dim "  Get started:"
+    echo -e "    ${C_CYAN}cwtch profile setup <name>${C_RESET}"
   else
     echo -e "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}${name}${C_RESET} ${C_DIM}(${type})${C_RESET}"
     if [[ "${type}" == "api-key" ]]; then
       dim "    API key profiles have no usage data"
+    elif [[ "${type}" == "token" ]]; then
+      dim "    Token profiles have no usage data"
     else
       token="$(get_token "${PROFILES_DIR}/${name}/.credential" 2>/dev/null)" || true
       if [[ -n "${token}" ]]; then
