@@ -136,7 +136,7 @@ cmd_setup() {
   echo ""
   local output; output="$(claude setup-token 2>&1)" || { err "Failed to run claude setup-token"; return 1; }
   echo "${output}"
-  local token; token="$(echo "${output}" | grep -oE 'sk-ant-oat01-[a-zA-Z0-9_-]+')"
+  local token; token="$(echo "${output}" | sed $'s/\x1b\[[0-9;]*[a-zA-Z]//g' | tr -d '\n' | grep -oE 'sk-ant-oat01-[a-zA-Z0-9_-]+')"
   [[ -z "${token}" ]] && { err "Could not extract token from output"; return 1; }
   echo ""
   profile_save_token "${name}" "${token}"
