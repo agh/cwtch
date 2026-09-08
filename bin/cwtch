@@ -18,77 +18,79 @@ source "${SCRIPT_DIR}/../lib/sync.sh"
 
 get_version() {
   local version_file="${SCRIPT_DIR}/../VERSION"
-  [[ -f "${version_file}" ]] && tr -d '\n' < "${version_file}" || echo "dev"
+  if [[ -f "${version_file}" ]]; then
+    tr -d '\n' < "${version_file}"
+  else
+    printf 'dev'
+  fi
 }
 
-get_git_sha() {
-  git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown"
-}
-
+# Follow the releases/latest redirect: no API token, no rate limit.
 check_latest_version() {
-  local latest; latest="$(curl -sf "https://api.github.com/repos/agh/cwtch/releases/latest" 2>/dev/null | jq -r '.tag_name // empty' | sed 's/^v//')"
-  echo "${latest}"
+  local location
+  location="$(curl -sIL --max-time 3 "https://github.com/agh/cwtch/releases/latest" 2>/dev/null |
+    tr -d '\r' | grep -i '^location:' | tail -1)" || return 1
+  [[ -n "${location}" ]] || return 1
+  printf '%s\n' "${location}" | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | tail -1 | sed 's/^v//'
 }
 
 version_gt() {
   # Returns 0 if $1 > $2 using semantic versioning
-  [[ "$(printf '%s\n%s' "$1" "$2" | sort -V | head -1)" != "$1" ]]
+  [[ "$1" != "$2" ]] && [[ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -1)" == "$1" ]]
+}
+
+cmd_version_short() {
+  printf 'cwtch %s\n' "$(get_version)"
 }
 
 cmd_version() {
-  local version; version="$(get_version)"
-  local sha; sha="$(get_git_sha)"
-
-  echo -e "${C_BOLD}cwtch${C_RESET} ${C_CYAN}v${version}${C_RESET} ${C_DIM}(${sha})${C_RESET}"
-  echo ""
-
-  # Check for updates
-  echo -e "${C_DIM}Checking for updates...${C_RESET}"
-  local latest; latest="$(check_latest_version)"
-  if [[ -n "${latest}" ]]; then
-    if version_gt "${latest}" "${version}"; then
-      echo -e "${C_YELLOW}${SYM_ARROW}${C_RESET} New version available: ${C_GREEN}v${latest}${C_RESET}"
-      echo ""
-      echo -e "  Update with: ${C_CYAN}brew upgrade cwtch${C_RESET}"
-    else
-      echo -e "${C_GREEN}${SYM_CHECK}${C_RESET} You're running the latest version"
-    fi
+  local version latest
+  version="$(get_version)"
+  printf 'cwtch %s\n' "${version}"
+  latest="$(check_latest_version)" || latest=""
+  if [[ -z "${latest}" ]]; then
+    dim "Could not check for updates"
+  elif version_gt "${latest}" "${version}"; then
+    printf '%b\n' "${C_YELLOW}${SYM_ARROW}${C_RESET} New version available: ${C_GREEN}v${latest}${C_RESET} (brew upgrade cwtch)"
   else
-    dim "  Could not check for updates"
+    log "You're running the latest version"
   fi
-  echo ""
+  return 0
 }
 
+help_row() { printf '%-28s %s\n' "  $1" "$2"; }
+
 usage_help() {
-  local version; version="$(get_version)"
-  echo -e "${C_BOLD}cwtch${C_RESET} ${C_DIM}v${version} — profiles & config for Claude Code${C_RESET}"
-  echo ""
-  echo -e "${C_BOLD}USAGE${C_RESET}"
-  echo -e "  cwtch ${C_CYAN}<command>${C_RESET} [args]"
-  echo ""
-  echo -e "${C_BOLD}COMMANDS${C_RESET}"
-  echo -e "  ${C_CYAN}status${C_RESET}                 Show profile, usage, and sync state"
-  echo -e "  ${C_CYAN}usage${C_RESET}                  Show usage for all profiles"
-  echo -e "  ${C_CYAN}refresh${C_RESET} [name] [-q]    Refresh expired OAuth tokens"
-  echo ""
-  echo -e "  ${C_CYAN}sync${C_RESET}                   Pull sources and build ~/.claude/"
-  echo -e "  ${C_CYAN}sync init${C_RESET}              Create example Cwtchfile"
-  echo -e "  ${C_CYAN}sync check${C_RESET}             Validate Cwtchfile"
-  echo ""
-  echo -e "  ${C_CYAN}profile list${C_RESET}           List saved profiles"
-  echo -e "  ${C_CYAN}profile setup${C_RESET} <name>   Create & save long-lived token (easiest)"
-  echo -e "  ${C_CYAN}profile save-token${C_RESET} <n> Save existing long-lived token"
-  echo -e "  ${C_CYAN}profile save-key${C_RESET} <n>   Save API key profile"
-  echo -e "  ${C_CYAN}profile save${C_RESET} <name>    Save OAuth credential as profile"
-  echo -e "  ${C_CYAN}profile use${C_RESET} <name>     Switch to profile"
-  echo -e "  ${C_CYAN}profile delete${C_RESET} <name>  Delete a profile"
-  echo -e "  ${C_CYAN}profile env${C_RESET}            Output export for current profile"
-  echo -e "  ${C_CYAN}profile token${C_RESET}          Output current profile's token"
-  echo -e "  ${C_CYAN}profile api-key${C_RESET}        Output current profile's API key"
-  echo ""
-  echo -e "  ${C_CYAN}edit${C_RESET}                   Edit Cwtchfile"
-  echo -e "  ${C_CYAN}version${C_RESET}                Check version and updates"
-  echo ""
+  printf '%b\n' "${C_BOLD}cwtch${C_RESET} ${C_DIM}v$(get_version) — profiles & config for Claude Code${C_RESET}"
+  printf '\n%b\n' "${C_BOLD}USAGE${C_RESET}"
+  printf '%s\n' "  cwtch <command> [args]"
+  printf '\n%b\n' "${C_BOLD}COMMANDS${C_RESET}"
+  help_row "status" "Show the active profile and sync state"
+  help_row "usage" "Show usage for OAuth profiles"
+  printf '\n'
+  help_row "sync" "Pull sources and build ~/.claude/"
+  help_row "sync init" "Create an example Cwtchfile"
+  help_row "sync check" "Validate the Cwtchfile"
+  printf '\n'
+  help_row "profile list" "List saved profiles"
+  help_row "profile current" "Print the active profile's name"
+  help_row "profile setup <name>" "Create and save a long-lived token (easiest)"
+  help_row "profile save-token <name>" "Save an existing long-lived token"
+  help_row "profile save-key <name>" "Save an API key profile"
+  help_row "profile save <name>" "Save the Keychain OAuth login as a profile"
+  help_row "profile use <name>" "Switch to a profile"
+  help_row "profile delete <name>" "Delete a profile"
+  help_row "profile env" "Print shell exports for the active profile"
+  help_row "profile token" "Print the active profile's token"
+  help_row "profile api-key" "Print the active profile's API key"
+  printf '\n'
+  help_row "edit" "Edit the Cwtchfile"
+  help_row "version" "Print the version and check for updates"
+  help_row "-v, --version" "Print the version (offline)"
+  help_row "-h, --help" "Show this help"
+  printf '\n'
+  printf '%s\n' "  Deprecated: refresh (does nothing; Claude Code refreshes its own login)"
+  printf '\n'
 }
 
 cmd_sync() {
@@ -117,7 +119,7 @@ cmd_profile() {
   local sub="$1"; shift
   case "${sub}" in
     list) profile_list ;;
-    current) [[ -f "${CURRENT_FILE}" ]] && cat "${CURRENT_FILE}" || echo "(none)" ;;
+    current) current_profile || printf '%s\n' "(none)" ;;
     setup)      [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_setup "$1" ;;
     save)       [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_save "$1" ;;
     save-key)   [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_key "$1" ;;
@@ -131,186 +133,241 @@ cmd_profile() {
   esac
 }
 
+read_secret() {
+  local prompt="$1" value=""
+  if [[ -t 0 ]]; then
+    read -rsp "${prompt}" value || true
+    printf '\n' >&2
+  else
+    read -r value || true
+  fi
+  printf '%s' "${value}"
+}
+
 cmd_save_key() {
-  local name="$1" key; [[ -t 0 ]] && { read -rsp "API key: " key; echo; } || read -r key
-  [[ -z "${key}" ]] && { err "No API key provided"; exit 1; }; profile_save_key "${name}" "${key}"
+  local name="$1" key
+  validate_name "${name}" || exit 1
+  key="$(read_secret "API key: ")"
+  [[ -z "${key}" ]] && { err "No API key provided"; exit 1; }
+  profile_save_key "${name}" "${key}"
 }
 
 cmd_save_token() {
-  local name="$1" token; [[ -t 0 ]] && { read -rsp "Token: " token; echo; } || read -r token
-  [[ -z "${token}" ]] && { err "No token provided"; exit 1; }; profile_save_token "${name}" "${token}"
+  local name="$1" token
+  validate_name "${name}" || exit 1
+  token="$(read_secret "Token: ")"
+  [[ -z "${token}" ]] && { err "No token provided"; exit 1; }
+  profile_save_token "${name}" "${token}"
 }
 
+CWTCH_TMPFILE=""
+cleanup_tmpfile() { [[ -n "${CWTCH_TMPFILE}" ]] && rm -f "${CWTCH_TMPFILE}"; return 0; }
+
+extract_tokens() { printf '%s' "$1" | grep -oE 'sk-ant-oat01-[A-Za-z0-9_-]+' | sort -u || true; }
+
 cmd_setup() {
-  local name="$1"
+  local name="$1" stripped tokens count token
+  validate_name "${name}" || exit 1
+  CWTCH_TMPFILE="$(mktemp "${TMPDIR:-/tmp}/cwtch-setup.XXXXXX")" || { err "Could not create a temporary file"; return 1; }
+  trap cleanup_tmpfile EXIT
   info "Running claude setup-token..."
-  echo ""
-  local output; output="$(claude setup-token 2>&1)" || { err "Failed to run claude setup-token"; return 1; }
-  echo "${output}"
-  local token; token="$(echo "${output}" | sed $'s/\x1b\[[0-9;]*[a-zA-Z]//g' | tr -d '\n' | grep -oE 'sk-ant-oat01-[a-zA-Z0-9_-]+')"
-  [[ -z "${token}" ]] && { err "Could not extract token from output"; return 1; }
-  echo ""
-  profile_save_token "${name}" "${token}"
-  echo ""
-  info "To use this profile, run:"
-  echo -e "  ${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
+  claude setup-token > "${CWTCH_TMPFILE}" 2>&1 || { err "Failed to run claude setup-token"; return 1; }
+  stripped="$(sed $'s/\x1b\[[0-9;]*[A-Za-z]//g' "${CWTCH_TMPFILE}")"
+  cleanup_tmpfile; CWTCH_TMPFILE=""; trap - EXIT
+  tokens="$(extract_tokens "${stripped}")"
+  count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
+  if [[ "${count}" -lt 2 ]] && ! [[ "${tokens}" =~ ${TOKEN_RE} ]]; then
+    # No whole token on one line: recover one that the terminal wrapped.
+    tokens="$(extract_tokens "$(printf '%s' "${stripped}" | tr -d '\n\r ')")"
+    count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
+  fi
+  [[ "${count}" -eq 0 ]] && { err "Could not find a token in claude setup-token output"; return 1; }
+  [[ "${count}" -gt 1 ]] && { err "Found ${count} candidate tokens; use 'cwtch profile save-token ${name}' and paste the token"; return 1; }
+  token="$(printf '%s\n' "${tokens}" | head -1)"
+  profile_save_token "${name}" "${token}" || return 1
+  printf '  Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
 }
 
 cmd_apikey() {
   local key; key="$(get_current_apikey)" || { err "Current profile is not an API key profile"; exit 1; }
-  echo "${key}"
+  printf '%s\n' "${key}"
 }
 
 cmd_token() {
   local token; token="$(get_current_token)" || { err "Current profile is not a token profile"; exit 1; }
-  echo "${token}"
+  printf '%s\n' "${token}"
+}
+
+env_precedence_warnings() {
+  local var value
+  for var in ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY; do
+    value="$(printenv "${var}")" || value=""
+    [[ -n "${value}" ]] && printf '# %s is set in this shell and takes precedence over this profile\n' "${var}"
+  done
+  return 0
 }
 
 cmd_env() {
-  local name type
-  [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")" || { err "No profile active"; exit 1; }
-  if is_token_profile "${name}"; then
-    local token; token="$(get_current_token)" || { err "No token for '${name}'"; exit 1; }
-    echo "export CLAUDE_CODE_OAUTH_TOKEN='${token}'"
-  elif is_apikey_profile "${name}"; then
-    local key; key="$(get_current_apikey)" || { err "No API key for '${name}'"; exit 1; }
-    echo "export ANTHROPIC_API_KEY='${key}'"
-  else
-    dim "# OAuth profile - no environment variable needed (uses Keychain)"
-  fi
+  local name type value
+  name="$(current_profile)" || { err "No profile active"; exit 1; }
+  type="$(profile_type "${name}")"
+  case "${type}" in
+    token)
+      value="$(cat "${PROFILES_DIR}/${name}/.token")"
+      [[ "${value}" =~ ${TOKEN_RE} ]] || { err "Stored token for '${name}' has an unexpected format; refusing to print"; exit 1; }
+      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
+      printf "export CLAUDE_CODE_OAUTH_TOKEN='%s'\n" "${value}"
+      ;;
+    api-key)
+      value="$(cat "${PROFILES_DIR}/${name}/.apikey")"
+      [[ "${value}" =~ ${APIKEY_RE} ]] || { err "Stored API key for '${name}' has an unexpected format; refusing to print"; exit 1; }
+      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
+      printf "export ANTHROPIC_API_KEY='%s'\n" "${value}"
+      ;;
+    oauth)
+      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
+      printf "# OAuth profile '%s': Claude Code uses the Keychain login\n" "${name}"
+      ;;
+    'mixed!')
+      err "Profile '${name}' holds more than one credential; save it again to fix it"; exit 1 ;;
+    *)
+      err "No credential for '${name}'"; exit 1 ;;
+  esac
+  env_precedence_warnings
 }
 
 cmd_refresh() {
-  local quiet=false profiles=()
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      -q|--quiet) quiet=true; shift ;;
-      *) profiles+=("$1"); shift ;;
+  local arg
+  for arg in "$@"; do
+    case "${arg}" in
+      -q|--quiet) return 0 ;;
+      *) ;;
     esac
   done
-  mkdir -p "${PROFILES_DIR}"
-  if [[ ${#profiles[@]} -eq 0 ]]; then
-    for dir in "${PROFILES_DIR}"/*/; do
-      [[ -d "${dir}" ]] || continue
-      local name="${dir%/}"; name="${name##*/}"; profiles+=("${name}")
-    done
+  printf '%s\n' "cwtch refresh is deprecated and does nothing: Claude Code refreshes its own login. If a login has expired, run /login inside Claude Code." >&2
+  return 0
+}
+
+pct_of() {
+  local raw="$1"
+  [[ "${raw}" =~ ^[0-9]+$ ]] || raw=0
+  printf '%s' "${raw}"
+}
+
+pct_colour() {
+  local pct="$1"
+  if [[ "${pct}" -ge 80 ]]; then printf '%s' "${C_RED}"
+  elif [[ "${pct}" -ge 50 ]]; then printf '%s' "${C_YELLOW}"
+  else printf '%s' "${C_GREEN}"; fi
+}
+
+profile_line() { printf '  %b%s%b\n' "$1${C_BOLD}" "$2" "${C_RESET}$3"; }
+
+usage_oauth() {
+  local dir="$1" name="$2" marker="$3" suffix="$4"
+  local token data u5 u7 c5 c7 limits line
+  token="$(get_token "${dir}.credential")" || token=""
+  if [[ -z "${token}" ]]; then
+    profile_line "${marker}" "${name}" "${suffix} ${C_DIM}(unreadable credential)${C_RESET}"
+    return 0
   fi
-  [[ ${#profiles[@]} -eq 0 ]] && { [[ "${quiet}" == "true" ]] || dim "No profiles to refresh."; return 0; }
-  [[ "${quiet}" == "true" ]] || header "Refreshing Tokens"
-  for name in "${profiles[@]}"; do refresh_profile_token "${name}" "${quiet}"; done
-  [[ "${quiet}" == "true" ]] || echo ""
+  data="$(fetch_usage "${token}")" || data=""
+  if [[ -z "${data}" ]]; then
+    profile_line "${marker}" "${name}" "${suffix} ${C_DIM}(usage unavailable)${C_RESET}"
+    return 0
+  fi
+  profile_line "${marker}" "${name}" "${suffix}"
+  u5="$(pct_of "$(printf '%s' "${data}" | jq -r '.five_hour.utilization // 0 | floor' 2>/dev/null)")"
+  u7="$(pct_of "$(printf '%s' "${data}" | jq -r '.seven_day.utilization // 0 | floor' 2>/dev/null)")"
+  c5="$(pct_colour "${u5}")"; c7="$(pct_colour "${u7}")"
+  printf '    %b\n' "${C_DIM}5h:${C_RESET} ${c5}${u5}%${C_RESET}  ${C_DIM}7d:${C_RESET} ${c7}${u7}%${C_RESET}"
+  limits="$(printf '%s' "${data}" |
+    jq -r '.limits[]? | select(.is_active == true) | "\(.kind) \(.percent // 0 | floor)% (\(.severity))"' 2>/dev/null)" || limits=""
+  if [[ -n "${limits}" ]]; then
+    while IFS= read -r line; do
+      if [[ -n "${line}" ]]; then printf '    %s\n' "${line}"; fi
+    done <<< "${limits}"
+  fi
 }
 
 cmd_usage() {
-  mkdir -p "${PROFILES_DIR}"; local found=0 current=""
-  [[ -f "${CURRENT_FILE}" ]] && current="$(cat "${CURRENT_FILE}")"
-  header "Usage by Profile"
+  mkdir -p "${PROFILES_DIR}"
+  local current found=0 dir name type marker suffix
+  current="$(current_profile 2>/dev/null)" || current=""
+  header "Usage by Profile (best effort; Claude Code's /usage is authoritative)"
   for dir in "${PROFILES_DIR}"/*/; do
-    [[ -d "${dir}" ]] || continue; found=1
-    local name="${dir%/}"; name="${name##*/}"
-    local marker="" suffix=""
-    [[ "${name}" == "${current}" ]] && marker="${C_GREEN}${SYM_STAR}${C_RESET} " && suffix=" ${C_GREEN}active${C_RESET}"
-    if is_apikey_profile "${name}"; then
-      echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(api-key)${C_RESET}"
-    elif is_token_profile "${name}"; then
-      echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(token)${C_RESET}"
+    [[ -d "${dir}" ]] || continue
+    found=1
+    name="${dir%/}"; name="${name##*/}"
+    type="$(profile_type "${name}")"
+    marker=""; suffix=""
+    if [[ "${name}" == "${current}" ]]; then
+      marker="${C_GREEN}${SYM_STAR}${C_RESET} "
+      suffix=" ${C_GREEN}active${C_RESET}"
+    fi
+    if [[ "${type}" == "oauth" ]]; then
+      usage_oauth "${dir}" "${name}" "${marker}" "${suffix}"
     else
-      local token; token="$(get_token "${dir}.credential")"
-      if [[ -n "${token}" ]]; then
-        local usage_data; usage_data="$(fetch_usage "${token}" 2>/dev/null)" || true
-        if [[ -n "${usage_data}" ]]; then
-          local u5 u7 r5 r7
-          u5="$(echo "${usage_data}" | jq -r '.five_hour.utilization // 0 | floor')"
-          u7="$(echo "${usage_data}" | jq -r '.seven_day.utilization // 0 | floor')"
-          r5="$(echo "${usage_data}" | jq -r '.five_hour.resets_at // empty | .[0:16] | sub("T";" ")')"
-          r7="$(echo "${usage_data}" | jq -r '.seven_day.resets_at // empty | .[0:16] | sub("T";" ")')"
-          local c5="${C_GREEN}" c7="${C_GREEN}"
-          [[ ${u5} -ge 50 ]] && c5="${C_YELLOW}"; [[ ${u5} -ge 80 ]] && c5="${C_RED}"
-          [[ ${u7} -ge 50 ]] && c7="${C_YELLOW}"; [[ ${u7} -ge 80 ]] && c7="${C_RED}"
-          echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix}"
-          echo -e "    ${C_DIM}5h:${C_RESET} ${c5}${u5}%${C_RESET}  ${C_DIM}7d:${C_RESET} ${c7}${u7}%${C_RESET}"
-        else
-          echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(no data)${C_RESET}"
-        fi
-      else
-        echo -e "  ${marker}${C_BOLD}${name}${C_RESET}${suffix} ${C_DIM}(no credential)${C_RESET}"
-      fi
+      profile_line "${marker}" "${name}" "${suffix} ${C_DIM}(${type})${C_RESET}"
     fi
   done
   [[ ${found} -eq 0 ]] && dim "  No profiles saved."
-  echo ""; true
+  printf '\n'
+  return 0
+}
+
+status_profile() {
+  local name type
+  header "Profile"
+  name="$(current_profile 2>/dev/null)" || name=""
+  if [[ -z "${name}" ]]; then
+    dim "  No profile active"
+    printf '\n'
+    dim "  Get started:"
+    printf '    %b\n' "${C_CYAN}cwtch profile setup <name>${C_RESET}"
+    return 0
+  fi
+  type="$(profile_type "${name}")"
+  printf '%b%s%b\n' "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}" "${name}" "${C_RESET} ${C_DIM}(${type})${C_RESET}"
+  case "${type}" in
+    token|api-key) printf '    Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}" ;;
+    oauth) dim "    Claude Code uses the Keychain login" ;;
+    'mixed!') dim "    More than one credential saved; save the profile again to fix it" ;;
+    *) dim "    No credential saved" ;;
+  esac
+}
+
+status_sources() {
+  header "Sources"
+  if ! config_exists; then
+    dim "  Not configured"
+    printf '  Run %b to get started\n' "${C_CYAN}cwtch sync init${C_RESET}"
+    return 0
+  fi
+  local idx repo as path commit
+  for idx in $(config_source_indices); do
+    repo="$(config_source_get "${idx}" repo)" || repo=""
+    as="$(config_source_get "${idx}" as)" || as=""
+    path="$(repo_local_path "${repo}")" || path=""
+    if [[ -n "${path}" ]] && [[ -d "${path}/.git" ]]; then
+      commit="$(git -C "${path}" log -1 --format='%h' 2>/dev/null)" || commit="?"
+      printf '  %b %s %b %s %b\n' "${C_GREEN}${SYM_CHECK}${C_RESET}" "${repo}" \
+        "${C_CYAN}${SYM_ARROW}${C_RESET}" "${as:-(root)}" "${C_DIM}[${commit:-?}]${C_RESET}"
+    else
+      printf '  %b %s %b %s %b\n' "${C_YELLOW}${SYM_DOT}${C_RESET}" "${repo}" \
+        "${C_CYAN}${SYM_ARROW}${C_RESET}" "${as:-(root)}" "${C_YELLOW}not synced${C_RESET}"
+    fi
+  done
+  printf '\n'
+  dim "  Config: ${CWTCHFILE}"
 }
 
 cmd_status() {
-  local version; version="$(get_version)"
-  echo -e "${C_BOLD}cwtch${C_RESET} ${C_DIM}v${version}${C_RESET}"
-
-  local name="(none)" type="oauth" token=""
-  [[ -f "${CURRENT_FILE}" ]] && name="$(cat "${CURRENT_FILE}")"
-  is_apikey_profile "${name}" && type="api-key"
-  is_token_profile "${name}" && type="token"
-
-  # Profile section
-  header "Profile"
-  if [[ "${name}" == "(none)" ]]; then
-    echo -e "  ${C_DIM}No profile active${C_RESET}"
-    echo ""
-    dim "  Get started:"
-    echo -e "    ${C_CYAN}cwtch profile setup <name>${C_RESET}"
-  else
-    echo -e "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}${name}${C_RESET} ${C_DIM}(${type})${C_RESET}"
-    if [[ "${type}" == "api-key" ]]; then
-      dim "    API key profiles have no usage data"
-    elif [[ "${type}" == "token" ]]; then
-      dim "    Token profiles have no usage data"
-    else
-      token="$(get_token "${PROFILES_DIR}/${name}/.credential" 2>/dev/null)" || true
-      if [[ -n "${token}" ]]; then
-        local usage_data; usage_data="$(fetch_usage "${token}" 2>/dev/null)" || true
-        if [[ -n "${usage_data}" ]]; then
-          local u5 u7 r5 r7
-          u5="$(echo "${usage_data}" | jq -r '.five_hour.utilization // 0 | floor')"
-          u7="$(echo "${usage_data}" | jq -r '.seven_day.utilization // 0 | floor')"
-          r5="$(echo "${usage_data}" | jq -r '.five_hour.resets_at // empty | .[0:16] | sub("T";" ")')"
-          r7="$(echo "${usage_data}" | jq -r '.seven_day.resets_at // empty | .[0:16] | sub("T";" ")')"
-          # Color based on usage level
-          local c5="${C_GREEN}" c7="${C_GREEN}"
-          [[ ${u5} -ge 50 ]] && c5="${C_YELLOW}"; [[ ${u5} -ge 80 ]] && c5="${C_RED}"
-          [[ ${u7} -ge 50 ]] && c7="${C_YELLOW}"; [[ ${u7} -ge 80 ]] && c7="${C_RED}"
-          echo -e "    ${C_DIM}5h:${C_RESET}  ${c5}${u5}%${C_RESET} ${C_DIM}resets ${r5} UTC${C_RESET}"
-          echo -e "    ${C_DIM}7d:${C_RESET}  ${c7}${u7}%${C_RESET} ${C_DIM}resets ${r7} UTC${C_RESET}"
-        else
-          dim "    Could not fetch usage data"
-        fi
-      else
-        dim "    No credential found"
-      fi
-    fi
-  fi
-
-  # Sources section
-  header "Sources"
-  if config_exists; then
-    local idx
-    for idx in $(config_source_indices); do
-      local repo as; repo="$(config_source_get "${idx}" repo)"; as="$(config_source_get "${idx}" as)"
-      local path; path="$(repo_local_path "${repo}")"
-      if [[ -d "${path}/.git" ]]; then
-        local commit; commit="$(git -C "${path}" log -1 --format='%h' 2>/dev/null || echo '?')"
-        echo -e "  ${C_GREEN}${SYM_CHECK}${C_RESET} ${repo} ${C_CYAN}${SYM_ARROW}${C_RESET} ${C_BOLD}${as:-"(root)"}${C_RESET} ${C_DIM}[${commit}]${C_RESET}"
-      else
-        echo -e "  ${C_YELLOW}${SYM_DOT}${C_RESET} ${repo} ${C_CYAN}${SYM_ARROW}${C_RESET} ${as:-"(root)"} ${C_YELLOW}not synced${C_RESET}"
-      fi
-    done
-    echo ""
-    dim "  Config: ${CWTCHFILE}"
-    local overlay; overlay="$(config_profile_overlay "${name}")"
-    [[ -n "${overlay}" ]] && dim "  Overlay: ${overlay}"
-  else
-    dim "  Not configured"
-    echo -e "  Run ${C_CYAN}cwtch sync init${C_RESET} to get started"
-  fi
-  echo ""
+  printf '%b\n' "${C_BOLD}cwtch${C_RESET} ${C_DIM}v$(get_version)${C_RESET}"
+  status_profile
+  status_sources
+  printf '\n'
+  return 0
 }
 
 main() {
@@ -323,7 +380,8 @@ main() {
     sync) cmd_sync "$@" ;;
     profile) cmd_profile "$@" ;;
     edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;
-    version|--version|-v) cmd_version ;;
+    version) cmd_version ;;
+    --version|-v) cmd_version_short ;;
     -h|--help) usage_help ;;
     *) err "Unknown: ${cmd}"; usage_help; exit 1 ;;
   esac
