@@ -92,9 +92,20 @@ usage_help() {
 }
 
 cmd_sync() {
-  if [[ $# -lt 1 ]]; then do_sync; return; fi
-  local sub="$1"; shift
+  local sub="" flags=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --force | --dry-run) flags+=("$1") ;;
+      -*) err "Unknown sync option: $1"; exit 1 ;;
+      *)
+        if [[ -n "${sub}" ]]; then err "Unknown sync command: $1"; exit 1; fi
+        sub="$1"
+        ;;
+    esac
+    shift
+  done
   case "${sub}" in
+    "") do_sync ${flags[@]+"${flags[@]}"} ;;
     init) sync_init ;;
     check) config_check ;;
     *) err "Unknown sync command: ${sub}"; exit 1 ;;
