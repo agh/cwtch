@@ -1,0 +1,2 @@
+# Mechanical reformatting commits (git blame --ignore-revs-file .git-blame-ignore-revs)
+e6054245143a23c98289a4b5aa7aa3f22f767c45  style: format the shell sources with shfmt

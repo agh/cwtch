@@ -32,14 +32,14 @@ cwtch_root() {
 # fallback then overwrites it rather than appending to stdout.
 perm_of() {
   local mode
-  mode="$(stat -f '%Lp' "$1" 2> /dev/null)" || mode="$(stat -c '%a' "$1" 2> /dev/null)"
+  mode="$(stat -f '%Lp' "$1" 2>/dev/null)" || mode="$(stat -c '%a' "$1" 2>/dev/null)"
   printf '%s\n' "${mode}"
 }
 
 require_tool() {
   local tool missing=""
   for tool in "$@"; do
-    if ! command -v "${tool}" > /dev/null 2>&1; then
+    if ! command -v "${tool}" >/dev/null 2>&1; then
       missing="${missing} ${tool}"
     fi
   done
@@ -83,16 +83,16 @@ setup_test_env() {
   export GIT_CONFIG_NOSYSTEM=1
   export GIT_CONFIG_GLOBAL="${TEST_DIR}/.gitconfig"
   printf '[init]\n\tdefaultBranch = main\n[advice]\n\tdetachedHead = false\n' \
-    > "${GIT_CONFIG_GLOBAL}"
+    >"${GIT_CONFIG_GLOBAL}"
 
   # Mock call logs and scriptable responses.
   export MOCK_KEYCHAIN="${TEST_DIR}/.mock-keychain"
   export SECURITY_CALLS="${TEST_DIR}/.security-calls"
   export CLAUDE_CALLS="${TEST_DIR}/.claude-calls"
   export CURL_CALLS="${TEST_DIR}/.curl-calls"
-  : > "${SECURITY_CALLS}"
-  : > "${CLAUDE_CALLS}"
-  : > "${CURL_CALLS}"
+  : >"${SECURITY_CALLS}"
+  : >"${CLAUDE_CALLS}"
+  : >"${CURL_CALLS}"
   unset MOCK_SECURITY_ADD_FAIL MOCK_CLAUDE_MODE
   unset MOCK_CURL_USAGE_BODY MOCK_CURL_RELEASE_HEADERS
   export MOCK_CURL_USAGE_EXIT=22
@@ -105,7 +105,7 @@ setup_test_env() {
 
 teardown_test_env() {
   if [[ -n "${TEST_DIR:-}" ]] && [[ -d "${TEST_DIR}" ]]; then
-    chmod -R u+rwX "${TEST_DIR}" 2> /dev/null || true
+    chmod -R u+rwX "${TEST_DIR}" 2>/dev/null || true
     rm -rf "${TEST_DIR}"
   fi
 }
@@ -129,7 +129,7 @@ install_mocks() {
   write_mock_security "${dir}/security"
   write_mock_claude "${dir}/claude"
   write_mock_curl "${dir}/curl"
-  : > "${dir}/.installed"
+  : >"${dir}/.installed"
   printf '%s\n' "${dir}"
 }
 
@@ -137,7 +137,7 @@ install_mocks() {
 # account it is contracted to pass, honours `-U` (update in place) the way the
 # real tool does, and records every call with its -s/-a values.
 write_mock_security() {
-  cat > "$1" << 'MOCK'
+  cat >"$1" <<'MOCK'
 #!/bin/bash
 set -uo pipefail
 sub="${1:-}"
@@ -219,7 +219,7 @@ MOCK
 # Strict `claude` mock: rejects any argv other than the contracted one and
 # scripts its output through MOCK_CLAUDE_MODE.
 write_mock_claude() {
-  cat > "$1" << 'MOCK'
+  cat >"$1" <<'MOCK'
 #!/bin/bash
 set -uo pipefail
 printf 'argv=%s\n' "$*" >> "${CLAUDE_CALLS}"
@@ -269,7 +269,7 @@ MOCK
 # `-sf` and `-sIL`, an HTTP failure is observable only as curl's exit status:
 # 22 = HTTP >= 400, 6 = could not resolve host, 28 = timeout.
 write_mock_curl() {
-  cat > "$1" << 'MOCK'
+  cat >"$1" <<'MOCK'
 #!/bin/bash
 set -uo pipefail
 
@@ -313,25 +313,25 @@ set_claude_mode() { export MOCK_CLAUDE_MODE="$1"; }
 set_claude_token() { export MOCK_CLAUDE_TOKEN="$1"; }
 fail_keychain_writes() { export MOCK_SECURITY_ADD_FAIL=1; }
 
-security_calls() { cat "${SECURITY_CALLS}" 2> /dev/null || true; }
-claude_calls() { cat "${CLAUDE_CALLS}" 2> /dev/null || true; }
-curl_calls() { cat "${CURL_CALLS}" 2> /dev/null || true; }
+security_calls() { cat "${SECURITY_CALLS}" 2>/dev/null || true; }
+claude_calls() { cat "${CLAUDE_CALLS}" 2>/dev/null || true; }
+curl_calls() { cat "${CURL_CALLS}" 2>/dev/null || true; }
 
-set_mock_credential() { printf '%s' "$1" > "${MOCK_KEYCHAIN}"; }
+set_mock_credential() { printf '%s' "$1" >"${MOCK_KEYCHAIN}"; }
 clear_mock_credential() { rm -f "${MOCK_KEYCHAIN}"; }
-keychain_cred() { cat "${MOCK_KEYCHAIN}" 2> /dev/null || true; }
+keychain_cred() { cat "${MOCK_KEYCHAIN}" 2>/dev/null || true; }
 
 keychain_token() {
-  jq -r '.claudeAiOauth.accessToken // empty' < "${MOCK_KEYCHAIN}" 2> /dev/null || true
+  jq -r '.claudeAiOauth.accessToken // empty' <"${MOCK_KEYCHAIN}" 2>/dev/null || true
 }
 
 profile_cred_token() {
   jq -r '.claudeAiOauth.accessToken // empty' \
-    < "${HOME}/.cwtch/profiles/$1/.credential" 2> /dev/null || true
+    <"${HOME}/.cwtch/profiles/$1/.credential" 2>/dev/null || true
 }
 
 set_usage_response() {
-  printf '%s\n' "$1" > "${TEST_DIR}/.usage-body.json"
+  printf '%s\n' "$1" >"${TEST_DIR}/.usage-body.json"
   export MOCK_CURL_USAGE_BODY="${TEST_DIR}/.usage-body.json"
 }
 
@@ -352,7 +352,7 @@ set_latest_release() {
     printf '\r\n'
     printf 'HTTP/2 200 \r\n'
     printf '\r\n'
-  } > "${TEST_DIR}/.release-headers"
+  } >"${TEST_DIR}/.release-headers"
   export MOCK_CURL_RELEASE_HEADERS="${TEST_DIR}/.release-headers"
 }
 
@@ -392,7 +392,7 @@ oauth_credential() {
 # The /api/oauth/usage response shape, trimmed but structurally faithful.
 usage_payload() {
   local five="${1:-83.4}" seven="${2:-12.9}"
-  cat << JSON
+  cat <<JSON
 {"five_hour":{"utilization":${five},"resets_at":"2026-09-08T02:00:00.000000Z","limit_dollars":null,"used_dollars":null,"remaining_dollars":null,"locked_reason":null},
  "seven_day":{"utilization":${seven},"resets_at":"2026-09-14T02:00:00.000000Z","limit_dollars":null,"used_dollars":null,"remaining_dollars":null,"locked_reason":null},
  "seven_day_oauth_apps":null,"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_cowork":null,
@@ -412,36 +412,36 @@ profiles_dir() { printf '%s\n' "${HOME}/.cwtch/profiles"; }
 write_oauth_profile() {
   local name="$1" token="${2:-${TEST_TOKEN_A}}"
   mkdir -p "${HOME}/.cwtch/profiles/${name}"
-  oauth_credential "${token}" > "${HOME}/.cwtch/profiles/${name}/.credential"
+  oauth_credential "${token}" >"${HOME}/.cwtch/profiles/${name}/.credential"
   chmod 600 "${HOME}/.cwtch/profiles/${name}/.credential"
 }
 
 write_token_profile() {
   local name="$1" token="${2:-${TEST_TOKEN_A}}"
   mkdir -p "${HOME}/.cwtch/profiles/${name}"
-  printf '%s\n' "${token}" > "${HOME}/.cwtch/profiles/${name}/.token"
+  printf '%s\n' "${token}" >"${HOME}/.cwtch/profiles/${name}/.token"
   chmod 600 "${HOME}/.cwtch/profiles/${name}/.token"
 }
 
 write_apikey_profile() {
   local name="$1" key="${2:-${TEST_APIKEY_A}}"
   mkdir -p "${HOME}/.cwtch/profiles/${name}"
-  printf '%s\n' "${key}" > "${HOME}/.cwtch/profiles/${name}/.apikey"
+  printf '%s\n' "${key}" >"${HOME}/.cwtch/profiles/${name}/.apikey"
   chmod 600 "${HOME}/.cwtch/profiles/${name}/.apikey"
 }
 
 set_current() {
   mkdir -p "${HOME}/.cwtch"
-  printf '%s\n' "$1" > "${HOME}/.cwtch/.current"
+  printf '%s\n' "$1" >"${HOME}/.cwtch/.current"
 }
 
-current_file_contents() { cat "${HOME}/.cwtch/.current" 2> /dev/null || true; }
+current_file_contents() { cat "${HOME}/.cwtch/.current" 2>/dev/null || true; }
 
 # --- config fixtures ---------------------------------------------------------
 
 create_cwtchfile() {
   mkdir -p "${HOME}/.cwtch"
-  printf '%s\n' "$1" > "${HOME}/.cwtch/Cwtchfile"
+  printf '%s\n' "$1" >"${HOME}/.cwtch/Cwtchfile"
 }
 
 # --- git fixtures ------------------------------------------------------------
@@ -475,22 +475,22 @@ build_mock_repo() {
   mkdir -p "${dir}/skills/reviewer" "${dir}/skills/notes" "${dir}/skills/notaskill"
   mkdir -p "${dir}/commands" "${dir}/agents/nested" "${dir}/config"
 
-  printf '%s\n' '---' 'name: reviewer' '---' '# Reviewer skill' > "${dir}/skills/reviewer/SKILL.md"
-  printf '%s\n' '---' 'name: notes' '---' '# Notes skill' > "${dir}/skills/notes/SKILL.md"
-  printf '%s\n' '# Not a skill: no SKILL.md here' > "${dir}/skills/notaskill/README.md"
+  printf '%s\n' '---' 'name: reviewer' '---' '# Reviewer skill' >"${dir}/skills/reviewer/SKILL.md"
+  printf '%s\n' '---' 'name: notes' '---' '# Notes skill' >"${dir}/skills/notes/SKILL.md"
+  printf '%s\n' '# Not a skill: no SKILL.md here' >"${dir}/skills/notaskill/README.md"
 
-  printf '%s\n' '# Deploy command' > "${dir}/commands/deploy.md"
-  printf '%s\n' '# Review command' > "${dir}/commands/review.md"
-  printf '%s\n' 'not markdown' > "${dir}/commands/notes.txt"
+  printf '%s\n' '# Deploy command' >"${dir}/commands/deploy.md"
+  printf '%s\n' '# Review command' >"${dir}/commands/review.md"
+  printf '%s\n' 'not markdown' >"${dir}/commands/notes.txt"
 
-  printf '%s\n' '---' 'name: helper' '---' '# Helper agent' > "${dir}/agents/helper.md"
-  printf '%s\n' '---' 'name: deep' '---' '# Deep agent' > "${dir}/agents/nested/deep.md"
+  printf '%s\n' '---' 'name: helper' '---' '# Helper agent' >"${dir}/agents/helper.md"
+  printf '%s\n' '---' 'name: deep' '---' '# Deep agent' >"${dir}/agents/nested/deep.md"
 
-  printf '%s\n' '{"mcpServers":{"demo":{"command":"demo","args":["--stdio"]}}}' > "${dir}/mcp.json"
-  printf '%s\n' '{"bare":{"command":"bare-server"}}' > "${dir}/mcp-bare.json"
+  printf '%s\n' '{"mcpServers":{"demo":{"command":"demo","args":["--stdio"]}}}' >"${dir}/mcp.json"
+  printf '%s\n' '{"bare":{"command":"bare-server"}}' >"${dir}/mcp-bare.json"
   printf '%s\n' '{"model":"sonnet","env":{"FROM_BASE":"1"},"permissions":{"defaultMode":"acceptEdits"}}' \
-    > "${dir}/config/settings.json"
-  printf '%s\n' '# Shared CLAUDE.md' 'From the source repo.' > "${dir}/config/CLAUDE.md"
+    >"${dir}/config/settings.json"
+  printf '%s\n' '# Shared CLAUDE.md' 'From the source repo.' >"${dir}/config/CLAUDE.md"
 
   git -C "${dir}" init --quiet -b "${branch}"
   git -C "${dir}" add -A
@@ -501,7 +501,7 @@ build_mock_repo() {
 repo_commit() {
   local dir="$1" file="$2" content="$3" message="${4:-update}"
   mkdir -p "$(dirname "${dir}/${file}")"
-  printf '%s\n' "${content}" > "${dir}/${file}"
+  printf '%s\n' "${content}" >"${dir}/${file}"
   git -C "${dir}" add -A
   git -C "${dir}" commit --quiet -m "${message}"
 }
@@ -624,7 +624,7 @@ assert_symlink_to() {
     printf 'expected %s to be a symlink\n' "$1" >&2
     return 1
   fi
-  resolved="$(cd "$(dirname "$1")" && cd "$(dirname "$(readlink "$1")")" 2> /dev/null && pwd)/$(basename "$(readlink "$1")")"
+  resolved="$(cd "$(dirname "$1")" && cd "$(dirname "$(readlink "$1")")" 2>/dev/null && pwd)/$(basename "$(readlink "$1")")"
   if [[ "$(readlink "$1")" != "$2" ]] && [[ "${resolved}" != "$2" ]]; then
     printf 'expected %s -> %s, got %s\n' "$1" "$2" "$(readlink "$1")" >&2
     return 1
