@@ -6,7 +6,8 @@ set -euo pipefail
 SCRIPT_PATH="$0"
 while [[ -L "${SCRIPT_PATH}" ]]; do
   DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
-  SCRIPT_PATH="$(readlink "${SCRIPT_PATH}")"; [[ "${SCRIPT_PATH}" != /* ]] && SCRIPT_PATH="${DIR}/${SCRIPT_PATH}"
+  SCRIPT_PATH="$(readlink "${SCRIPT_PATH}")"
+  [[ "${SCRIPT_PATH}" != /* ]] && SCRIPT_PATH="${DIR}/${SCRIPT_PATH}"
 done
 SCRIPT_DIR="$(cd "$(dirname "${SCRIPT_PATH}")" && pwd)"
 # shellcheck source=../lib/common.sh
@@ -19,7 +20,7 @@ source "${SCRIPT_DIR}/../lib/sync.sh"
 get_version() {
   local version_file="${SCRIPT_DIR}/../VERSION"
   if [[ -f "${version_file}" ]]; then
-    tr -d '\n' < "${version_file}"
+    tr -d '\n' <"${version_file}"
   else
     printf 'dev'
   fi
@@ -98,9 +99,15 @@ cmd_sync() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --force | --dry-run) flags+=("$1") ;;
-      -*) err "Unknown sync option: $1"; exit 1 ;;
+      -*)
+        err "Unknown sync option: $1"
+        exit 1
+        ;;
       *)
-        if [[ -n "${sub}" ]]; then err "Unknown sync command: $1"; exit 1; fi
+        if [[ -n "${sub}" ]]; then
+          err "Unknown sync command: $1"
+          exit 1
+        fi
         sub="$1"
         ;;
     esac
@@ -110,26 +117,73 @@ cmd_sync() {
     "") do_sync ${flags[@]+"${flags[@]}"} ;;
     init) sync_init ;;
     check) config_check ;;
-    *) err "Unknown sync command: ${sub}"; exit 1 ;;
+    *)
+      err "Unknown sync command: ${sub}"
+      exit 1
+      ;;
   esac
 }
 
 cmd_profile() {
-  [[ $# -lt 1 ]] && { err "Missing profile subcommand"; usage_help; exit 1; }
-  local sub="$1"; shift
+  [[ $# -lt 1 ]] && {
+    err "Missing profile subcommand"
+    usage_help
+    exit 1
+  }
+  local sub="$1"
+  shift
   case "${sub}" in
     list) profile_list ;;
     current) current_profile || printf '%s\n' "(none)" ;;
-    setup)      [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_setup "$1" ;;
-    save)       [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_save "$1" ;;
-    save-key)   [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_key "$1" ;;
-    save-token) [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; cmd_save_token "$1" ;;
-    use)        [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_use "$1" ;;
-    delete)     [[ $# -lt 1 ]] && { err "Missing name"; exit 1; }; profile_delete "$1" ;;
-    api-key)    cmd_apikey ;;
-    token)      cmd_token ;;
-    env)        cmd_env ;;
-    *) err "Unknown profile command: ${sub}"; exit 1 ;;
+    setup)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      cmd_setup "$1"
+      ;;
+    save)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      profile_save "$1"
+      ;;
+    save-key)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      cmd_save_key "$1"
+      ;;
+    save-token)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      cmd_save_token "$1"
+      ;;
+    use)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      profile_use "$1"
+      ;;
+    delete)
+      [[ $# -lt 1 ]] && {
+        err "Missing name"
+        exit 1
+      }
+      profile_delete "$1"
+      ;;
+    api-key) cmd_apikey ;;
+    token) cmd_token ;;
+    env) cmd_env ;;
+    *)
+      err "Unknown profile command: ${sub}"
+      exit 1
+      ;;
   esac
 }
 
@@ -148,7 +202,10 @@ cmd_save_key() {
   local name="$1" key
   validate_name "${name}" || exit 1
   key="$(read_secret "API key: ")"
-  [[ -z "${key}" ]] && { err "No API key provided"; exit 1; }
+  [[ -z "${key}" ]] && {
+    err "No API key provided"
+    exit 1
+  }
   profile_save_key "${name}" "${key}"
 }
 
@@ -156,24 +213,38 @@ cmd_save_token() {
   local name="$1" token
   validate_name "${name}" || exit 1
   token="$(read_secret "Token: ")"
-  [[ -z "${token}" ]] && { err "No token provided"; exit 1; }
+  [[ -z "${token}" ]] && {
+    err "No token provided"
+    exit 1
+  }
   profile_save_token "${name}" "${token}"
 }
 
 CWTCH_TMPFILE=""
-cleanup_tmpfile() { [[ -n "${CWTCH_TMPFILE}" ]] && rm -f "${CWTCH_TMPFILE}"; return 0; }
+cleanup_tmpfile() {
+  [[ -n "${CWTCH_TMPFILE}" ]] && rm -f "${CWTCH_TMPFILE}"
+  return 0
+}
 
 extract_tokens() { printf '%s' "$1" | grep -oE 'sk-ant-oat01-[A-Za-z0-9_-]+' | sort -u || true; }
 
 cmd_setup() {
   local name="$1" stripped tokens count token
   validate_name "${name}" || exit 1
-  CWTCH_TMPFILE="$(mktemp "${TMPDIR:-/tmp}/cwtch-setup.XXXXXX")" || { err "Could not create a temporary file"; return 1; }
+  CWTCH_TMPFILE="$(mktemp "${TMPDIR:-/tmp}/cwtch-setup.XXXXXX")" || {
+    err "Could not create a temporary file"
+    return 1
+  }
   trap cleanup_tmpfile EXIT
   info "Running claude setup-token..."
-  claude setup-token > "${CWTCH_TMPFILE}" 2>&1 || { err "Failed to run claude setup-token"; return 1; }
+  claude setup-token >"${CWTCH_TMPFILE}" 2>&1 || {
+    err "Failed to run claude setup-token"
+    return 1
+  }
   stripped="$(sed $'s/\x1b\[[0-9;]*[A-Za-z]//g' "${CWTCH_TMPFILE}")"
-  cleanup_tmpfile; CWTCH_TMPFILE=""; trap - EXIT
+  cleanup_tmpfile
+  CWTCH_TMPFILE=""
+  trap - EXIT
   tokens="$(extract_tokens "${stripped}")"
   count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
   if [[ "${count}" -lt 2 ]] && ! [[ "${tokens}" =~ ${TOKEN_RE} ]]; then
@@ -181,20 +252,34 @@ cmd_setup() {
     tokens="$(extract_tokens "$(printf '%s' "${stripped}" | tr -d '\n\r ')")"
     count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
   fi
-  [[ "${count}" -eq 0 ]] && { err "Could not find a token in claude setup-token output"; return 1; }
-  [[ "${count}" -gt 1 ]] && { err "Found ${count} candidate tokens; use 'cwtch profile save-token ${name}' and paste the token"; return 1; }
+  [[ "${count}" -eq 0 ]] && {
+    err "Could not find a token in claude setup-token output"
+    return 1
+  }
+  [[ "${count}" -gt 1 ]] && {
+    err "Found ${count} candidate tokens; use 'cwtch profile save-token ${name}' and paste the token"
+    return 1
+  }
   token="$(printf '%s\n' "${tokens}" | head -1)"
   profile_save_token "${name}" "${token}" || return 1
   printf '  Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
 }
 
 cmd_apikey() {
-  local key; key="$(get_current_apikey)" || { err "Current profile is not an API key profile"; exit 1; }
+  local key
+  key="$(get_current_apikey)" || {
+    err "Current profile is not an API key profile"
+    exit 1
+  }
   printf '%s\n' "${key}"
 }
 
 cmd_token() {
-  local token; token="$(get_current_token)" || { err "Current profile is not a token profile"; exit 1; }
+  local token
+  token="$(get_current_token)" || {
+    err "Current profile is not a token profile"
+    exit 1
+  }
   printf '%s\n' "${token}"
 }
 
@@ -209,18 +294,27 @@ env_precedence_warnings() {
 
 cmd_env() {
   local name type value
-  name="$(current_profile)" || { err "No profile active"; exit 1; }
+  name="$(current_profile)" || {
+    err "No profile active"
+    exit 1
+  }
   type="$(profile_type "${name}")"
   case "${type}" in
     token)
       value="$(cat "${PROFILES_DIR}/${name}/.token")"
-      [[ "${value}" =~ ${TOKEN_RE} ]] || { err "Stored token for '${name}' has an unexpected format; refusing to print"; exit 1; }
+      [[ "${value}" =~ ${TOKEN_RE} ]] || {
+        err "Stored token for '${name}' has an unexpected format; refusing to print"
+        exit 1
+      }
       printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
       printf "export CLAUDE_CODE_OAUTH_TOKEN='%s'\n" "${value}"
       ;;
     api-key)
       value="$(cat "${PROFILES_DIR}/${name}/.apikey")"
-      [[ "${value}" =~ ${APIKEY_RE} ]] || { err "Stored API key for '${name}' has an unexpected format; refusing to print"; exit 1; }
+      [[ "${value}" =~ ${APIKEY_RE} ]] || {
+        err "Stored API key for '${name}' has an unexpected format; refusing to print"
+        exit 1
+      }
       printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
       printf "export ANTHROPIC_API_KEY='%s'\n" "${value}"
       ;;
@@ -229,9 +323,13 @@ cmd_env() {
       printf "# OAuth profile '%s': Claude Code uses the Keychain login\n" "${name}"
       ;;
     'mixed!')
-      err "Profile '${name}' holds more than one credential; save it again to fix it"; exit 1 ;;
+      err "Profile '${name}' holds more than one credential; save it again to fix it"
+      exit 1
+      ;;
     *)
-      err "No credential for '${name}'"; exit 1 ;;
+      err "No credential for '${name}'"
+      exit 1
+      ;;
   esac
   env_precedence_warnings
 }
@@ -240,7 +338,7 @@ cmd_refresh() {
   local arg
   for arg in "$@"; do
     case "${arg}" in
-      -q|--quiet) return 0 ;;
+      -q | --quiet) return 0 ;;
       *) ;;
     esac
   done
@@ -256,8 +354,10 @@ pct_of() {
 
 pct_colour() {
   local pct="$1"
-  if [[ "${pct}" -ge 80 ]]; then printf '%s' "${C_RED}"
-  elif [[ "${pct}" -ge 50 ]]; then printf '%s' "${C_YELLOW}"
+  if [[ "${pct}" -ge 80 ]]; then
+    printf '%s' "${C_RED}"
+  elif [[ "${pct}" -ge 50 ]]; then
+    printf '%s' "${C_YELLOW}"
   else printf '%s' "${C_GREEN}"; fi
 }
 
@@ -279,14 +379,15 @@ usage_oauth() {
   profile_line "${marker}" "${name}" "${suffix}"
   u5="$(pct_of "$(printf '%s' "${data}" | jq -r '.five_hour.utilization // 0 | floor' 2>/dev/null)")"
   u7="$(pct_of "$(printf '%s' "${data}" | jq -r '.seven_day.utilization // 0 | floor' 2>/dev/null)")"
-  c5="$(pct_colour "${u5}")"; c7="$(pct_colour "${u7}")"
+  c5="$(pct_colour "${u5}")"
+  c7="$(pct_colour "${u7}")"
   printf '    %b\n' "${C_DIM}5h:${C_RESET} ${c5}${u5}%${C_RESET}  ${C_DIM}7d:${C_RESET} ${c7}${u7}%${C_RESET}"
   limits="$(printf '%s' "${data}" |
     jq -r '.limits[]? | select(.is_active == true) | "\(.kind) \(.percent // 0 | floor)% (\(.severity))"' 2>/dev/null)" || limits=""
   if [[ -n "${limits}" ]]; then
     while IFS= read -r line; do
       if [[ -n "${line}" ]]; then printf '    %s\n' "${line}"; fi
-    done <<< "${limits}"
+    done <<<"${limits}"
   fi
 }
 
@@ -298,9 +399,11 @@ cmd_usage() {
   for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue
     found=1
-    name="${dir%/}"; name="${name##*/}"
+    name="${dir%/}"
+    name="${name##*/}"
     type="$(profile_type "${name}")"
-    marker=""; suffix=""
+    marker=""
+    suffix=""
     if [[ "${name}" == "${current}" ]]; then
       marker="${C_GREEN}${SYM_STAR}${C_RESET} "
       suffix=" ${C_GREEN}active${C_RESET}"
@@ -330,7 +433,7 @@ status_profile() {
   type="$(profile_type "${name}")"
   printf '%b%s%b\n' "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}" "${name}" "${C_RESET} ${C_DIM}(${type})${C_RESET}"
   case "${type}" in
-    token|api-key) printf '    Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}" ;;
+    token | api-key) printf '    Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}" ;;
     oauth) dim "    Claude Code uses the Keychain login" ;;
     'mixed!') dim "    More than one credential saved; save the profile again to fix it" ;;
     *) dim "    No credential saved" ;;
@@ -371,8 +474,12 @@ cmd_status() {
 }
 
 main() {
-  [[ $# -lt 1 ]] && { usage_help; exit 0; }
-  local cmd="$1"; shift
+  [[ $# -lt 1 ]] && {
+    usage_help
+    exit 0
+  }
+  local cmd="$1"
+  shift
   case "${cmd}" in
     status) cmd_status ;;
     usage) cmd_usage ;;
@@ -381,9 +488,13 @@ main() {
     profile) cmd_profile "$@" ;;
     edit) "${EDITOR:-vi}" "${CWTCHFILE}" ;;
     version) cmd_version ;;
-    --version|-v) cmd_version_short ;;
-    -h|--help) usage_help ;;
-    *) err "Unknown: ${cmd}"; usage_help; exit 1 ;;
+    --version | -v) cmd_version_short ;;
+    -h | --help) usage_help ;;
+    *)
+      err "Unknown: ${cmd}"
+      usage_help
+      exit 1
+      ;;
   esac
 }
 

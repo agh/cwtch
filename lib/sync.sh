@@ -67,16 +67,28 @@ sync_repo() {
   if [[ -d "${path}/.git" ]]; then
     info "Updating ${repo}..."
     git -C "${path}" fetch --quiet --depth 1 origin -- "${ref}" ||
-      { err "Failed to fetch '${ref}' from ${repo}"; return 1; }
+      {
+        err "Failed to fetch '${ref}' from ${repo}"
+        return 1
+      }
     git -C "${path}" checkout --quiet -B "${ref}" FETCH_HEAD ||
-      { err "Failed to check out '${ref}' of ${repo}"; return 1; }
+      {
+        err "Failed to check out '${ref}' of ${repo}"
+        return 1
+      }
     # Managed checkouts are disposable: drop any local edits to tracked files.
     git -C "${path}" reset --quiet --hard FETCH_HEAD ||
-      { err "Failed to reset '${ref}' of ${repo}"; return 1; }
+      {
+        err "Failed to reset '${ref}' of ${repo}"
+        return 1
+      }
   else
     info "Cloning ${repo}..."
     git clone --quiet --depth 1 --branch "${ref}" -- "${url}" "${path}" ||
-      { err "Failed to clone ${repo} (${ref})"; return 1; }
+      {
+        err "Failed to clone ${repo} (${ref})"
+        return 1
+      }
   fi
   SYNC_SEEN="${SYNC_SEEN}${path} ${ref}"$'\n'
 }
@@ -193,19 +205,19 @@ sync_drop_legacy() {
 sync_write_json() {
   local target="$1" content="$2"
   mkdir -p "$(dirname "${target}")" || return 1
-  printf '%s\n' "${content}" > "${target}.tmp" || return 1
+  printf '%s\n' "${content}" >"${target}.tmp" || return 1
   mv "${target}.tmp" "${target}"
 }
 
 # Base settings supply defaults; whatever is already in settings.json wins.
 sync_settings() {
   local base="$1" target="${CLAUDE_DIR}/settings.json" merged existing
-  if ! jq . "${base}" > /dev/null 2>&1; then
+  if ! jq . "${base}" >/dev/null 2>&1; then
     err "Settings file is not valid JSON: ${base}"
     return 1
   fi
   if [[ -e "${target}" ]]; then
-    if ! jq . "${target}" > /dev/null 2>&1; then
+    if ! jq . "${target}" >/dev/null 2>&1; then
       err "${target} is not valid JSON; refusing to merge"
       return 1
     fi
@@ -231,13 +243,16 @@ sync_settings() {
 sync_mcp() {
   local file="$1" target="${CLAUDE_JSON}" servers merged existing
   servers="$(jq -c 'if type == "object" and has("mcpServers") then .mcpServers else . end' "${file}" 2>/dev/null)" ||
-    { err "MCP file is not valid JSON: ${file}"; return 1; }
-  if ! printf '%s' "${servers}" | jq -e 'type == "object"' > /dev/null 2>&1; then
+    {
+      err "MCP file is not valid JSON: ${file}"
+      return 1
+    }
+  if ! printf '%s' "${servers}" | jq -e 'type == "object"' >/dev/null 2>&1; then
     err "MCP file must hold an object of servers: ${file}"
     return 1
   fi
   if [[ -e "${target}" ]]; then
-    if ! jq . "${target}" > /dev/null 2>&1; then
+    if ! jq . "${target}" >/dev/null 2>&1; then
       err "${target} is not valid JSON; refusing to merge MCP servers"
       return 1
     fi
@@ -296,7 +311,7 @@ sync_prune_links() {
       *) ;;
     esac
     cwtch_note "  removed ${old}"
-  done < "${LINKS_MANIFEST}"
+  done <"${LINKS_MANIFEST}"
 }
 
 sync_write_manifest() {
@@ -306,7 +321,7 @@ sync_write_manifest() {
     printf '%s' "${SYNC_NEW_LINKS}"
     [[ "${keep_old}" == true ]] && [[ -f "${LINKS_MANIFEST}" ]] && cat "${LINKS_MANIFEST}"
     true
-  } | grep -v '^$' | sort -u > "${LINKS_MANIFEST}.tmp" || true
+  } | grep -v '^$' | sort -u >"${LINKS_MANIFEST}.tmp" || true
   mv "${LINKS_MANIFEST}.tmp" "${LINKS_MANIFEST}"
 }
 
@@ -320,7 +335,7 @@ sync_init() {
     return 1
   fi
   mkdir -p "${CWTCH_DIR}"
-  cat > "${CWTCHFILE}" << 'EOF'
+  cat >"${CWTCHFILE}" <<'EOF'
 # Cwtchfile - configure your Claude Code environment.
 # See: https://github.com/agh/cwtch
 #
@@ -375,23 +390,35 @@ sync_one_source() {
   if [[ -n "${ns}" ]]; then
     sync_drop_legacy "${ns}"
     if [[ -n "${skills}" ]]; then
-      [[ -d "${path}/${skills}" ]] || { err "skills directory not found: ${path}/${skills}"; return 1; }
+      [[ -d "${path}/${skills}" ]] || {
+        err "skills directory not found: ${path}/${skills}"
+        return 1
+      }
       sync_skills "${path}/${skills%/}" "${ns}" || return 1
       parts="${parts:+${parts}, }${SYNC_COUNT} skills"
     fi
     if [[ -n "${commands}" ]]; then
-      [[ -d "${path}/${commands}" ]] || { err "commands directory not found: ${path}/${commands}"; return 1; }
+      [[ -d "${path}/${commands}" ]] || {
+        err "commands directory not found: ${path}/${commands}"
+        return 1
+      }
       sync_commands "${path}/${commands%/}" "${ns}" || return 1
       parts="${parts:+${parts}, }${SYNC_COUNT} commands"
     fi
     if [[ -n "${agents}" ]]; then
-      [[ -d "${path}/${agents}" ]] || { err "agents directory not found: ${path}/${agents}"; return 1; }
+      [[ -d "${path}/${agents}" ]] || {
+        err "agents directory not found: ${path}/${agents}"
+        return 1
+      }
       sync_agents "${path}/${agents%/}" "${ns}" || return 1
       parts="${parts:+${parts}, }${SYNC_COUNT} agents"
     fi
   fi
   if [[ -n "${mcp}" ]]; then
-    [[ -f "${path}/${mcp}" ]] || { err "MCP file not found: ${path}/${mcp}"; return 1; }
+    [[ -f "${path}/${mcp}" ]] || {
+      err "MCP file not found: ${path}/${mcp}"
+      return 1
+    }
     sync_mcp "${path}/${mcp}" || return 1
     parts="${parts:+${parts}, }mcp"
   fi
@@ -487,7 +514,10 @@ do_sync() {
   fi
 
   printf '\n'
-  [[ ${errors} -eq 0 ]] && { log "Sync complete"; return 0; }
+  [[ ${errors} -eq 0 ]] && {
+    log "Sync complete"
+    return 0
+  }
   printf '%b %s\n' "${C_RED}${SYM_CROSS}${C_RESET}" "Sync finished with ${errors} error(s)"
   return 1
 }

@@ -69,7 +69,7 @@ current_profile() {
 
 set_current() {
   mkdir -p "${CWTCH_DIR}"
-  printf '%s\n' "$1" > "${CURRENT_FILE}"
+  printf '%s\n' "$1" >"${CURRENT_FILE}"
 }
 
 # Write a secret file at mode 0600 from creation, keeping one .bak of the
@@ -80,12 +80,12 @@ write_secret() {
   if [[ -f "${path}" ]] && [[ "$(cat "${path}")" != "${content}" ]]; then
     (
       umask 077
-      rm -f "${path}.bak" && cat "${path}" > "${path}.bak"
+      rm -f "${path}.bak" && cat "${path}" >"${path}.bak"
     ) || return 1
   fi
   (
     umask 077
-    rm -f "${path}.tmp" && printf '%s\n' "${content}" > "${path}.tmp"
+    rm -f "${path}.tmp" && printf '%s\n' "${content}" >"${path}.tmp"
   ) || return 1
   mv -f "${path}.tmp" "${path}"
 }
@@ -117,10 +117,10 @@ get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -w 2>/dev/null 
 # Replace the Keychain item in place; no delete step, so a failure leaves the
 # existing login untouched.
 set_cred() {
-  security add-generic-password -U -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -w "$1" > /dev/null 2>&1
+  security add-generic-password -U -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -w "$1" >/dev/null 2>&1
 }
 
-is_oauth_json() { printf '%s' "$1" | jq -e '.claudeAiOauth.accessToken' > /dev/null 2>&1; }
+is_oauth_json() { printf '%s' "$1" | jq -e '.claudeAiOauth.accessToken' >/dev/null 2>&1; }
 
 keychain_config_warning() {
   [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] || return 0
@@ -231,7 +231,7 @@ profile_save_token() {
 # switching: Claude Code refreshes that credential in place.
 snapshot_outgoing_cred() {
   local current live
-  current="$(current_profile 2> /dev/null)" || return 0
+  current="$(current_profile 2>/dev/null)" || return 0
   [[ -f "${PROFILES_DIR}/${current}/.credential" ]] || return 0
   live="$(get_cred)"
   [[ -n "${live}" ]] || return 0
@@ -292,14 +292,14 @@ profile_delete() {
     err "Profile '${name}' not found"
     return 1
   }
-  real="$(cd "${target}" 2> /dev/null && pwd -P)" || real=""
-  expected="$(cd "${PROFILES_DIR}" 2> /dev/null && pwd -P)/${name}" || expected=""
+  real="$(cd "${target}" 2>/dev/null && pwd -P)" || real=""
+  expected="$(cd "${PROFILES_DIR}" 2>/dev/null && pwd -P)/${name}" || expected=""
   if [[ -z "${real}" ]] || [[ "${real}" != "${expected}" ]]; then
     err "Refusing to delete '${name}': not a profile directory"
     return 1
   fi
   rm -rf "${target}"
-  current="$(current_profile 2> /dev/null)" || current=""
+  current="$(current_profile 2>/dev/null)" || current=""
   [[ "${current}" == "${name}" ]] && rm -f "${CURRENT_FILE}"
   log "Deleted '${name}'"
 }
