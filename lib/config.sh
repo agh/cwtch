@@ -2,21 +2,6 @@
 # Cwtchfile parsing and validation for cwtch.
 # shellcheck disable=SC2154
 
-# Helpers owned by lib/common.sh. Defined here only while they are missing so
-# that this work package stands alone; the integrator drops this block.
-if ! declare -F validate_name >/dev/null; then
-  validate_name() {
-    local name="${1:-}"
-    if [[ "${name}" == "." ]] || [[ "${name}" == ".." ]] ||
-      ! [[ "${name}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$ ]]; then
-      err "Invalid name '${name}' (use letters, digits, '.', '_', '-'; max 64)"
-      return 1
-    fi
-  }
-fi
-[[ -n "${CLAUDE_DIR:-}" ]] || CLAUDE_DIR="${CLAUDE_CONFIG_DIR:-${HOME}/.claude}"
-[[ -n "${CLAUDE_JSON:-}" ]] || CLAUDE_JSON="${CLAUDE_CONFIG_DIR:-${HOME}}/.claude.json"
-
 # Print a note that may contain user-controlled text (never echo -e).
 cwtch_note() { printf '%b%s%b\n' "${C_DIM}" "$*" "${C_RESET}"; }
 

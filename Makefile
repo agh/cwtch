@@ -77,6 +77,6 @@ test-hermetic: tools ## Run the bats suite with no system git config and no $USE
 	GIT_CONFIG_NOSYSTEM=1 env -u USER $(BATS) $(BATS_UNIT)
 
 .PHONY: e2e
-e2e: tools ## Run the end-to-end suite (needs the network and the real $HOME)
+e2e: tools ## Run the end-to-end suite (needs the network; HOME is sandboxed)
 	@[[ -f $(E2E_SUITE) ]] || { echo "$(E2E_SUITE) does not exist" >&2; exit 1; }
 	CWTCH_E2E=1 $(BATS) $(E2E_SUITE)

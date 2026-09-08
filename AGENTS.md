@@ -47,12 +47,18 @@ cwtch/
 ├── scripts/
 │   └── install.sh
 ├── tests/
-│   ├── config.bats
-│   ├── cwtch.bats
-│   ├── exitcodes.bats
-│   ├── helpers.bash
-│   ├── profile.bats
-│   └── sync.bats
+│   ├── helpers.bash        # Sandboxed HOME, strict security/claude/curl mocks, fixtures
+│   ├── cli.bats            # Dispatch, help, aliases, exit codes, deprecated refresh
+│   ├── names.bats          # validate_name, .current handling, path safety
+│   ├── profile.bats        # Save, use, delete, setup, credential storage
+│   ├── env.bats            # profile env output and precedence warnings
+│   ├── status.bats         # Offline status rendering
+│   ├── usage.bats          # Best-effort usage rendering with a mocked curl
+│   ├── version.bats        # -v, --version and the update check
+│   ├── config.bats         # Cwtchfile validation
+│   ├── sync.bats           # Repositories, refs, outputs, manifest
+│   ├── sync-safety.bats    # Symlink-only replacement, backups, ref injection
+│   └── e2e.bats            # Real-output checks; network clone gated on CWTCH_E2E=1
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── Makefile
