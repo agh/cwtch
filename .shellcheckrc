@@ -1,1 +1,27 @@
-enable=all
+# shellcheck configuration for cwtch.  https://www.shellcheck.net/wiki/Directive
+#
+# Follow `source` directives so bin/cwtch is linted together with lib/*.sh.
+external-sources=true
+source-path=SCRIPTDIR
+
+# Every optional check (`shellcheck --list-optional`) except the three noted
+# below.  `enable=all` is deliberately NOT used: a shellcheck upgrade can add a
+# new optional check and turn CI red without a source change.
+enable=add-default-case
+enable=avoid-negated-conditions
+enable=avoid-nullary-conditions
+enable=deprecate-which
+enable=quote-safe-variables
+enable=require-double-brackets
+enable=require-variable-braces
+enable=useless-use-of-cat
+
+# Deliberately NOT enabled:
+#   check-unassigned-uppercase (SC2154) - lib/*.sh legitimately read globals
+#     defined in lib/common.sh; enabling it forces blanket file-level
+#     `disable=SC2154` suppressions that also mask real lowercase typos.
+#     SC2154 stays active for lowercase variables, which is where typos happen.
+#   check-extra-masked-returns (SC2312) - all hits are `$(cmd | head -1)` style
+#     idioms that are correct here.
+#   check-set-e-suppressed (SC2310) - would require rewriting every
+#     `is_apikey_profile x && ...` guard into an if/then block.

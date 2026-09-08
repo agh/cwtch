@@ -13,3 +13,19 @@ indent_size = 2
 
 [*.md]
 trim_trailing_whitespace = false
+
+# shfmt reads these; they must stay in step with SHFMT_FLAGS in the Makefile so
+# that format-on-save in the devcontainer produces exactly what CI checks.
+[bin/cwtch]
+shell_variant = bash
+switch_case_indent = true
+
+[*.{sh,bash}]
+shell_variant = bash
+switch_case_indent = true
+
+[Makefile]
+indent_style = tab
+
+[*.bats]
+shell_variant = bats

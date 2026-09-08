@@ -5,110 +5,178 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # Pinned so that a tool release cannot turn CI red without a commit here.
+  # Bump the version and the matching SHA256 in the same pull request; each
+  # digest below was produced by downloading the asset and hashing it.
+  SHELLCHECK_VERSION: "0.11.0"
+  SHELLCHECK_SHA256: "8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+  SHFMT_VERSION: "3.14.1"
+  SHFMT_SHA256: "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf"
+  ACTIONLINT_VERSION: "1.7.12"
+  ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+  BATS_VERSION: "1.14.0"
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    name: lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - name: shellcheck
-        uses: ludeeus/action-shellcheck@master
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          scandir: ./bin ./lib ./scripts
+          persist-credentials: false
+
+      - name: Install shellcheck
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/shellcheck.tar.xz"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+            -o "${archive}" \
+            "https://github.com/koalaman/shellcheck/releases/download/v${SHELLCHECK_VERSION}/shellcheck-v${SHELLCHECK_VERSION}.linux.x86_64.tar.xz"
+          printf '%s  %s\n' "${SHELLCHECK_SHA256}" "${archive}" | sha256sum -c -
+          tar -xJf "${archive}" -C "${RUNNER_TEMP}"
+          sudo install -m 0755 \
+            "${RUNNER_TEMP}/shellcheck-v${SHELLCHECK_VERSION}/shellcheck" /usr/local/bin/shellcheck
+          shellcheck --version
+
+      - name: Install shfmt
+        run: |
+          set -euo pipefail
+          binary="${RUNNER_TEMP}/shfmt"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+            -o "${binary}" \
+            "https://github.com/mvdan/sh/releases/download/v${SHFMT_VERSION}/shfmt_v${SHFMT_VERSION}_linux_amd64"
+          printf '%s  %s\n' "${SHFMT_SHA256}" "${binary}" | sha256sum -c -
+          sudo install -m 0755 "${binary}" /usr/local/bin/shfmt
+          shfmt --version
+
+      - name: Install actionlint
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/actionlint.tar.gz"
+          curl --proto '=https' --tlsv1.2 -fsSL --retry 3 --retry-all-errors \
+            -o "${archive}" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          printf '%s  %s\n' "${ACTIONLINT_SHA256}" "${archive}" | sha256sum -c -
+          tar -xzf "${archive}" -C "${RUNNER_TEMP}" actionlint
+          sudo install -m 0755 "${RUNNER_TEMP}/actionlint" /usr/local/bin/actionlint
+          actionlint --version
+
+      # `make lint` and `make fmt-check` are exactly what a contributor runs
+      # locally. If CI and the Makefile diverge, CI stops being reproducible.
+      - name: shellcheck and actionlint
+        run: make lint
 
       - name: shfmt
-        run: |
-          curl -sS https://webinstall.dev/shfmt | bash
-          export PATH="$HOME/.local/bin:$PATH"
-          shfmt -d -i 2 -ci bin/ lib/ scripts/
+        run: make fmt-check
 
   test:
-    runs-on: ubuntu-latest
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        # ubuntu-24.04 is kept as a portability canary: the mocked Keychain
+        # makes the suite pass there, and every host assumption the suite grows
+        # (system gitconfig, ${USER}, BSD vs GNU flags) shows up on Linux first.
+        os: [ubuntu-24.04, macos-15, macos-26]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y bats jq
-          sudo wget -qO /usr/local/bin/yq https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
-          sudo chmod +x /usr/local/bin/yq
+      # Installed from the pinned action rather than brew/apt: one code path
+      # for all three runners, a fixed bats version, and no unpinned package
+      # index in the middle of a test job.
+      - name: Install bats
+        uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
+        with:
+          bats-version: ${{ env.BATS_VERSION }}
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+          github-token: ${{ github.token }}
 
-      - name: Run tests
-        run: bats tests/
+      # git, jq and yq come from the runner image. Print the versions so an
+      # image change is visible in the log, and fail rather than silently
+      # degrade if any of them drops below what the suite needs.
+      - name: Toolchain
+        run: make tools
+
+      - name: Bash 3.2 compatibility
+        run: make bash32-check
+
+      - name: Unit tests
+        run: make test
+
+      # Regression guard for the host dependencies that kept the old Linux job
+      # red: the suite must not need a system gitconfig (init.defaultBranch) or
+      # ${USER} to be set.
+      - name: Unit tests (hermetic)
+        run: make test-hermetic
 
   e2e:
-    runs-on: macos-latest
+    name: e2e
+    runs-on: macos-26
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - name: Install dependencies
-        run: brew install jq bats-core yq
+      - name: Install bats
+        uses: bats-core/bats-action@77d6fb60505b4d0d1d73e48bd035b55074bbfb43 # 4.0.0
+        with:
+          bats-version: ${{ env.BATS_VERSION }}
+          support-install: false
+          assert-install: false
+          detik-install: false
+          file-install: false
+          github-token: ${{ github.token }}
 
-      - name: Run unit tests on macOS
-        run: bats tests/
+      - name: Start from a clean home
+        run: rm -rf ~/.cwtch ~/.claude ~/.claude.json
 
-      - name: E2E - help output
-        run: bin/cwtch --help
+      # tests/e2e.bats drives the real binary against a real clone. Its exit
+      # code is the result: nothing here is allowed to swallow a failure.
+      - name: End-to-end suite
+        run: make e2e
 
-      - name: E2E - profile list (empty)
+  # Single required context: a branch ruleset only has to require `ci`, and the
+  # matrix can grow without editing the ruleset.
+  ci:
+    name: ci
+    needs: [lint, test, e2e]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Check job results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
-          output=$(bin/cwtch profile list)
-          [[ "$output" == *"No profiles saved"* ]]
-
-      - name: E2E - profile current (none)
-        run: |
-          output=$(bin/cwtch profile current)
-          [[ "$output" == "(none)" ]]
-
-      - name: E2E - save and list API key profile
-        run: |
-          echo "sk-ant-test-key" | bin/cwtch profile save-key testapi
-          output=$(bin/cwtch profile list)
-          [[ "$output" == *"testapi"* ]]
-          [[ "$output" == *"api-key"* ]]
-
-      - name: E2E - status shows profile
-        run: |
-          output=$(bin/cwtch status)
-          [[ "$output" == *"Profile: testapi"* ]]
-          [[ "$output" == *"api-key"* ]]
-
-      - name: E2E - sync init creates Cwtchfile
-        run: |
-          bin/cwtch sync init
-          [[ -f ~/.cwtch/Cwtchfile ]]
-          grep -q "sources:" ~/.cwtch/Cwtchfile
-
-      - name: E2E - sync check validates Cwtchfile
-        run: |
-          output=$(bin/cwtch sync check)
-          [[ "$output" == *"Cwtchfile is valid"* ]]
-
-      - name: E2E - status shows sources configured
-        run: |
-          output=$(bin/cwtch status)
-          [[ "$output" == *"Sources: 1 configured"* ]]
-
-      - name: E2E - edit references correct file
-        run: |
-          export EDITOR="echo"
-          output=$(bin/cwtch edit)
-          [[ "$output" == *"/.cwtch/Cwtchfile"* ]]
-
-      - name: E2E - sync with GitHub repo
-        run: |
-          # Create a Cwtchfile that syncs from a real GitHub repo
-          cat > ~/.cwtch/Cwtchfile << 'EOF'
-          sources:
-            - repo: agh/cwtch
-              ref: main
-              as: cwtch-self
-              commands: .github/
-          EOF
-          # Fix heredoc indentation
-          sed -i '' 's/^          //' ~/.cwtch/Cwtchfile
-          bin/cwtch sync
-          # Verify the source was cloned
-          [[ -d ~/.cwtch/sources/agh-cwtch ]]
+          set -euo pipefail
+          printf 'job results: %s\n' "${RESULTS}"
+          for result in ${RESULTS}; do
+            if [[ "${result}" != "success" ]]; then
+              printf '::error::a required job did not succeed (%s)\n' "${RESULTS}"
+              exit 1
+            fi
+          done
+          printf 'all jobs succeeded\n'

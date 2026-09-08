@@ -1,0 +1,29 @@
+# Bash 4+ constructs that must not appear in code which has to run under macOS'
+# /bin/bash 3.2.57. Read by scripts/check-bash32.sh; kept out of that script so
+# that the scanner does not match its own table.
+#
+# Columns, separated by whitespace:
+#   id       short name used in the failure message
+#   regex    POSIX extended regex, no literal spaces (use [[:space:]])
+#   runtime  yes if /bin/bash 3.2 fails outright when the sample runs
+#   sample   a line exercising the construct, used by the self-test
+#
+# `runtime no` means 3.2 accepts the text but does something else with it:
+# `cmd &>> f` parses as `cmd &` followed by `>> f`, which is silent corruption
+# rather than an error. Negative substring *offsets* (${v: -2}) are absent on
+# purpose - 3.2.57 supports them; only negative *lengths* (${v:0:-1}) are 4.2.
+
+mapfile (^|[^[:alnum:]_])(mapfile|readarray)([[:space:]]|$) yes mapfile -t arr < /dev/null
+assoc (^|[[:space:]])(declare|typeset|local)[[:space:]]+-[A-Za-z]*A([[:space:]]|$) yes declare -A map
+nameref (^|[[:space:]])(declare|typeset|local)[[:space:]]+-[A-Za-z]*n([[:space:]]|$) yes declare -n ref
+case-all \$\{[^}]*(\^\^|,,)[^}]*\} yes x=abc; printf '%s\n' "${x^^}"
+case-one \$\{[A-Za-z_][A-Za-z0-9_]*(\[[^]]*\])?[\^,]\} yes x=abc; printf '%s\n' "${x^}"
+transform \$\{[A-Za-z_][A-Za-z0-9_]*@[A-Za-z]\} yes x=abc; printf '%s\n' "${x@Q}"
+pipe-err \|& yes true |& cat
+append-both &>> no true &>> /dev/null
+neg-length \$\{[A-Za-z_][A-Za-z0-9_]*:[^}]*:[[:space:]]*-[0-9] yes x=abcdef; printf '%s\n' "${x:0:-1}"
+coproc (^|[[:space:]])coproc([[:space:]]|$) yes coproc cat /dev/null
+wait-n (^|[[:space:]])wait[[:space:]]+-[A-Za-z]*n([[:space:]]|$) yes wait -n
+globstar shopt[[:space:]]+-[su][[:space:]]+globstar yes shopt -s globstar
+test-v \[\[[[:space:]]+-v[[:space:]] yes x=1; [[ -v x ]]
+exec-fd (^|[[:space:]])exec[[:space:]]+\{[A-Za-z_] yes exec {fd}</dev/null

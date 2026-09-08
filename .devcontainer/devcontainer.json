@@ -1,24 +1,30 @@
 {
-  "name": "Claude Utils (Shell)",
-  "image": "debian:bookworm-slim",
+  "name": "cwtch",
+  "image": "mcr.microsoft.com/devcontainers/base:bookworm",
   "features": {
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": false
     }
   },
-  "onCreateCommand": "bash .devcontainer/setup.sh",
+  "onCreateCommand": "sudo bash .devcontainer/setup.sh",
+  "postCreateCommand": "make help",
   "customizations": {
     "vscode": {
       "settings": {
         "[shellscript]": {
           "editor.defaultFormatter": "mkhl.shfmt",
           "editor.formatOnSave": true
-        }
+        },
+        "shfmt.executablePath": "/usr/local/bin/shfmt",
+        "shellcheck.executablePath": "/usr/local/bin/shellcheck",
+        "shellcheck.useWorkspaceRootAsCwd": true
       },
       "extensions": [
         "timonwong.shellcheck",
         "mkhl.shfmt",
-        "mads-hartmann.bash-ide-vscode"
+        "mads-hartmann.bash-ide-vscode",
+        "jetmartin.bats",
+        "editorconfig.editorconfig"
       ]
     }
   }
