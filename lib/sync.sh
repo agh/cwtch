@@ -70,6 +70,9 @@ sync_repo() {
       { err "Failed to fetch '${ref}' from ${repo}"; return 1; }
     git -C "${path}" checkout --quiet -B "${ref}" FETCH_HEAD ||
       { err "Failed to check out '${ref}' of ${repo}"; return 1; }
+    # Managed checkouts are disposable: drop any local edits to tracked files.
+    git -C "${path}" reset --quiet --hard FETCH_HEAD ||
+      { err "Failed to reset '${ref}' of ${repo}"; return 1; }
   else
     info "Cloning ${repo}..."
     git clone --quiet --depth 1 --branch "${ref}" -- "${url}" "${path}" ||
@@ -485,6 +488,6 @@ do_sync() {
 
   printf '\n'
   [[ ${errors} -eq 0 ]] && { log "Sync complete"; return 0; }
-  err "Sync finished with ${errors} error(s)"
+  printf '%b %s\n' "${C_RED}${SYM_CROSS}${C_RESET}" "Sync finished with ${errors} error(s)"
   return 1
 }

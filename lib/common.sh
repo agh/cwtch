@@ -146,7 +146,7 @@ fetch_usage() {
 profile_list() {
   mkdir -p "${PROFILES_DIR}"
   local current found=0 dir name type
-  current="$(current_profile 2> /dev/null)" || current=""
+  current="$(current_profile)" || current=""
   for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue
     found=1
