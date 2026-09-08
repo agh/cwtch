@@ -1,129 +1,191 @@
-# CLAUDE.md - cwtch
+# AGENTS.md - cwtch
 
 ## Overview
 
-cwtch (Welsh: "cuddle/cozy nook") — Manage Claude Code profiles and sync configuration from Git.
+cwtch (Welsh: "cuddle/cosy nook") manages Claude Code profiles and syncs selected configuration
+from Git.
 
 > **Note:** This project is not affiliated with, sponsored by, or endorsed by Anthropic PBC.
 
-**Platform:** macOS only (tested on macOS Tahoe). Uses macOS Keychain for credential storage.
+## Platforms and dependencies
 
-## Tech Stack
+The product runs on macOS because OAuth profile switching uses `security` and macOS Keychain.
+Ubuntu is a supported test environment through mocks, not a product runtime.
 
-- **Language**: Bash
-- **Platform**: macOS (requires `security` command for Keychain access)
-- **Dependencies**: `jq` for JSON parsing, `yq` for YAML parsing
-- **Standards**: [Doctrine Shell Guide](https://github.com/agh/doctrine/blob/main/guides/languages/shell.md)
+Runtime dependencies:
 
-## Repository Structure
+- macOS `/bin/bash` 3.2.57-compatible shell code
+- Git, `curl`, and `shasum`
+- `jq`
+- Mike Farah's real `yq` v4; there is no test or runtime fallback
+- Claude Code for `profile setup`
+- macOS `security` for OAuth snapshot profiles
 
-```
+Development dependencies include bats 1.5 or later, shellcheck, shfmt, and Make.
+
+## Repository structure
+
+```text
 cwtch/
+├── .devcontainer/          # Linux editing and test environment
 ├── .github/
-│   └── workflows/ci.yml    # GitHub Actions CI (lint, test, e2e)
+│   ├── ISSUE_TEMPLATE/
+│   ├── workflows/          # CI, release, scanning, and Scorecard workflows
+│   └── PULL_REQUEST_TEMPLATE.md
+├── assets/                 # README and release artwork
 ├── bin/
-│   └── cwtch               # Main CLI entry point
+│   └── cwtch               # Argument dispatch and output rendering
+├── docs/
+│   ├── configuration.md
+│   ├── profiles.md
+│   ├── security.md
+│   └── troubleshooting.md
 ├── lib/
-│   ├── common.sh           # Shared functions, profile management
+│   ├── common.sh           # Shared output, validation, profiles, Keychain, usage
 │   ├── config.sh           # Cwtchfile parsing and validation
-│   └── sync.sh             # Git sync and namespace linking
+│   └── sync.sh             # Repositories, merges, links, manifest, pruning
 ├── scripts/
-│   └── install.sh          # Manual installer
+│   └── install.sh
 ├── tests/
-│   ├── helpers.bash        # Shared test utilities
-│   ├── cwtch.bats          # Top-level CLI tests
-│   ├── profile.bats        # Profile management tests
-│   ├── config.bats         # Cwtchfile validation tests
-│   └── sync.bats           # Sync functionality tests
-└── docs/
-    ├── profiles.md         # Profile management reference
-    └── configuration.md    # Cwtchfile and sync reference
+│   ├── config.bats
+│   ├── cwtch.bats
+│   ├── exitcodes.bats
+│   ├── helpers.bash
+│   ├── profile.bats
+│   └── sync.bats
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+├── Makefile
+├── SECURITY.md
+└── VERSION
 ```
 
 ## Architecture
 
-### Core Concepts
+### Profiles
 
-1. **Profiles are thin** — Store only credentials (`.credential` or `.apikey`)
-2. **Configuration is declarative** — Defined in `~/.cwtch/Cwtchfile`
-3. **Sources merge via namespaces** — Multiple repos coexist as `/namespace/command`
-4. **Symlinks for instant updates** — No copying, just linking
+Profiles contain exactly one credential:
 
-### Directory Layout
+- `.token` — setup token exported as `CLAUDE_CODE_OAUTH_TOKEN`
+- `.credential` — OAuth JSON copied from and restored to macOS Keychain
+- `.apikey` — API key exported as `ANTHROPIC_API_KEY`
 
-```
-~/.cwtch/
-├── Cwtchfile              # Configuration (YAML)
-├── .current               # Current profile name
-├── profiles/{name}/       # Credentials only
-│   └── .credential        # OAuth token (chmod 600)
-└── sources/{repo}/        # Cloned repositories
+The selected name is stored in `~/.cwtch/.current`. `validate_name()` protects profile and
+namespace paths, `current_profile()` validates `.current`, and `write_secret()` creates mode-`600`
+files and their single `.bak` backup.
 
-~/.claude/                 # Built by cwtch sync
-├── settings.json          # Merged settings
-├── CLAUDE.md              # Symlink → source
-├── commands/{namespace}/  # Symlink → source
-├── agents/{namespace}/    # Symlink → source
-└── hooks/{namespace}/     # Symlink → source
-```
+### Configuration
 
-### Data Flow
+`~/.cwtch/Cwtchfile` declares optional base settings, user `CLAUDE.md`, and Git sources.
+Repositories live below `~/.cwtch/sources/`. cwtch merges JSON and creates symlinks in
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}`, while user MCP servers are merged into
+`${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json`.
 
-```
-Cwtchfile → sync_repo() → sources/ → link_namespace() → ~/.claude/
-                                   → merge_mcp() → settings.json
+```text
+Cwtchfile -> config_validate()
+          -> sync_repo() -> sources/
+          -> settings merge / CLAUDE.md link
+          -> skill conversion / agent links / MCP merge
+          -> state/links manifest and conservative pruning
 ```
 
-## Common Commands
+Only symlinks are replaced for linked outputs. Managed source checkouts are disposable; local edits
+are discarded.
 
-| Task | Command |
-|------|---------|
-| Install | `brew install agh/cask/cwtch` |
-| Test | `bats tests/` |
-| Lint | `shellcheck bin/cwtch lib/*.sh` |
-| Format check | `shfmt -d -i 2 -ci bin/ lib/ scripts/` |
+## Key functions
 
-## Code Style
+### `bin/cwtch`
 
-- Scripts **MUST NOT** exceed 100 lines per file
-- **MUST** use `set -euo pipefail`
-- **MUST** use `[[ ]]` for tests, `$()` for substitution
-- **MUST** use 2-space indentation
-- **MUST** pass shellcheck
-- Log messages go to stderr via `log "..." >&2` when output is captured
+- `main()` — top-level dispatch and standard exit behaviour
+- `usage_help()` — complete command and alias help
+- `cmd_profile()` — profile subcommand dispatch
+- `cmd_setup()` — capture, extract, validate, and save one setup token
+- `cmd_refresh()` — deprecated quiet-aware no-op
+- `cmd_status()` — offline profile and source rendering
+- `cmd_usage()` — best-effort per-profile usage rendering
+- `cmd_version()` — offline version output or the explicit update-check path
 
-## Key Functions
+### `lib/common.sh`
 
-### lib/common.sh
-- `profile_save()` — Save current credential to profile
-- `profile_use()` — Restore credential from profile
-- `get_cred()` / `restore_cred()` — Keychain operations
+- `validate_name()` / `current_profile()` — safe names and active-profile lookup
+- `write_secret()` — atomic mode-`600` writes and one-file backups
+- `get_cred()` / `get_token()` — Keychain and OAuth access-token reads
+- `profile_save()` / `profile_save_token()` / `profile_save_key()` — typed credential storage
+- `profile_use()` / `profile_list()` — safe switching and type rendering
+- `fetch_usage()` — bounded usage request
 
-### lib/config.sh
-- `config_get()` — Read top-level Cwtchfile key
-- `config_source_get()` — Read source field by index
-- `config_validate()` — Validate Cwtchfile structure
+### `lib/config.sh`
 
-### lib/sync.sh
-- `sync_repo()` — Clone or update a Git repository
-- `link_namespace()` — Create symlink for commands/agents/hooks
-- `merge_mcp()` — Deep-merge MCP servers into settings.json
-- `do_sync()` — Main sync orchestration
+- `config_get()` / `config_source_get()` — yq-backed Cwtchfile access
+- `config_validate()` — schema, name, ref, placeholder, and duplicate validation
 
-## Testing
+### `lib/sync.sh`
 
-Tests use [bats](https://bats-core.readthedocs.io/) with mock utilities:
+- `repo_to_url()` / `repo_local_path()` — canonical source URL and collision-resistant checkout path
+- `sync_repo()` — shallow clone or fetched-ref checkout
+- settings, MCP, skill, command, agent, and `CLAUDE.md` helpers — safe output application
+- `do_sync()` — dry-run planning, per-source error collection, manifest update, and pruning
 
-- **Mock yq** — Tests work without real yq installed (uses grep/awk fallback)
-- **Mock security** — Simulates Keychain operations
-- **Mock git repos** — Created via `create_mock_repo()` helper
+## Make targets
 
-Run tests:
-```bash
-bats tests/           # All tests
-bats tests/sync.bats  # Just sync tests
-```
+Use Make targets rather than duplicating tool arguments:
 
-## Related Projects
+| Target | Purpose |
+|---|---|
+| `make check` | Run the complete local check set used by CI |
+| `make lint` | Run shellcheck with the repository `.shellcheckrc` |
+| `make fmt` | Rewrite shell sources with `shfmt -i 2 -ci` |
+| `make fmt-check` | Fail when shfmt would change a file |
+| `make test` | Run the bats suite |
+| `make test-hermetic` | Run tests with isolated Git configuration and `USER` unset |
+| `make bash32-check` | Parse shell files with macOS `/bin/bash` 3.2 |
+| `make e2e` | Run macOS end-to-end checks against real platform facilities |
 
-- [agh/homebrew-cask](https://github.com/agh/homebrew-cask) — Homebrew tap
+CI runs linting and portable tests on Ubuntu 24.04, tests on macOS 15 and macOS 26, hermetic tests,
+Bash 3.2 parsing, and macOS end-to-end coverage.
+
+## Shell style
+
+- Executable scripts use `set -euo pipefail`; sourced libraries inherit it from `bin/cwtch`.
+- Keep Bash 3.2 compatibility: no `${var,,}`, `mapfile`, `readarray`, `declare -A`, `|&`, `&>>`,
+  negative substring indices, or other Bash 4 features.
+- Use `[[ ... ]]` for tests, `$()` for command substitution, and two-space indentation.
+- Print user-controlled strings with `printf '%s\n'`; reserve `%b` for cwtch's own colour codes.
+- Honour `NO_COLOR`, `TERM=dumb`, and non-terminal output.
+- Send progress messages to standard error when a function's standard output is captured.
+- Each file has one responsibility. Split responsibilities when necessary; do not impose an
+  arbitrary line-count limit.
+- Never compress statements to satisfy a length budget.
+- Run `make lint` and `make fmt-check`.
+- Write user-facing text in British English.
+
+## Test conventions
+
+Tests use bats 1.5 or later and the real `jq`, `yq`, and Git executables.
+
+`tests/helpers.bash` provides:
+
+- a sandboxed `HOME`;
+- isolated author, committer, and global Git configuration;
+- `GIT_CONFIG_NOSYSTEM=1` and `init.defaultBranch=main`;
+- strict `security`, `claude`, and `curl` mocks with scriptable results;
+- real-shape credential and usage fixtures;
+- mock Git repository builders;
+- portable permission inspection.
+
+Every behaviour change needs a focused bats test. Run related tests first, then `make check`.
+Platform-independent tests must pass on macOS and Ubuntu, both normally and with `USER` unset.
+Real Keychain integration belongs in macOS end-to-end coverage.
+
+## Release procedure
+
+1. Set `VERSION` to `X.Y.Z`.
+2. Add the dated release and migration notes to `CHANGELOG.md`.
+3. Run `make check` and `make e2e`.
+4. Commit the release changes.
+5. Create a signed tag: `git tag -s vX.Y.Z -m "vX.Y.Z"`.
+6. Push the commit and tag.
+7. Replace the Homebrew formula checksum and bump the formula in
+   [agh/homebrew-cask](https://github.com/agh/homebrew-cask).
+
+The release workflow requires the tag and `VERSION` to match.

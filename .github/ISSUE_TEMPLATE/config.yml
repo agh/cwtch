@@ -2,4 +2,7 @@ blank_issues_enabled: false
 contact_links:
   - name: Documentation
     url: https://github.com/agh/cwtch#readme
-    about: Check the README first
+    about: Check the README and linked documentation first
+  - name: Security vulnerability
+    url: https://github.com/agh/cwtch/security/advisories/new
+    about: Report vulnerabilities privately instead of opening a public issue

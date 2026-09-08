@@ -1,36 +1,20 @@
-## Summary
+## Problem
 
-Brief description of changes.
+What user or maintainer problem does this change address?
 
-## Related Issues
+## Root cause
 
-Fixes #(issue number)
+For a fix, identify the code path and why the failure occurs. Write `Not applicable` for changes
+without a defect.
 
-## Type of Change
+## What changed
 
-- [ ] Bug fix (non-breaking change fixing an issue)
-- [ ] New feature (non-breaking change adding functionality)
-- [ ] Breaking change (fix or feature causing existing functionality to change)
-- [ ] Documentation update
+Name the files, functions, commands, configuration paths, and data flows changed.
 
-## Changes Made
+## Verification
 
-- Change 1
-- Change 2
+List the commands run and the relevant results.
 
-## Testing
+## Scope
 
-- [ ] Tests pass locally (`bats tests/`)
-- [ ] shellcheck passes
-- [ ] New tests added for new functionality
-
-## Checklist
-
-- [ ] Code follows the project's style guide
-- [ ] Self-review completed
-- [ ] Documentation updated (if applicable)
-- [ ] Scripts remain under 100 lines
-
-## Additional Notes
-
-Any additional context for reviewers.
+State any related behaviour deliberately left unchanged.

@@ -1,35 +1,38 @@
-name: Bug Report
-description: Report a bug
-labels: ["bug", "triage"]
+name: Bug report
+description: Report reproducible incorrect behaviour
+labels:
+  - bug
+  - triage
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for reporting! Please fill out the form below.
+        Do not paste tokens, API keys, Keychain contents, credential files, or private source data.
+        Redact secrets and private repository names from all output.
 
   - type: textarea
     id: description
     attributes:
       label: Description
-      description: Clear description of the bug
+      description: What went wrong, and what was the impact?
     validations:
       required: true
 
   - type: textarea
     id: reproduction
     attributes:
-      label: Steps to Reproduce
-      description: Steps to reproduce the behavior
+      label: Steps to reproduce
+      description: Include the smallest sequence of commands that reproduces the problem.
       placeholder: |
-        1. Run 'cwtch ...'
-        2. See error
+        1. Run `cwtch ...`
+        2. Observe ...
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected Behavior
+      label: Expected behaviour
       description: What did you expect to happen?
     validations:
       required: true
@@ -37,15 +40,26 @@ body:
   - type: textarea
     id: actual
     attributes:
-      label: Actual Behavior
-      description: What actually happened?
+      label: Actual behaviour
+      description: What happened instead?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: installation
+    attributes:
+      label: Installation method
+      options:
+        - Homebrew
+        - Source checkout
+        - Other
     validations:
       required: true
 
   - type: input
     id: version
     attributes:
-      label: Version
+      label: cwtch version
       description: Output of `cwtch --version` or `brew info cwtch`
     validations:
       required: true
@@ -53,14 +67,32 @@ body:
   - type: input
     id: macos
     attributes:
-      label: macOS Version
+      label: macOS version
       description: Output of `sw_vers -productVersion`
+    validations:
+      required: true
+
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      description: Output of `${SHELL} --version`
     validations:
       required: true
 
   - type: textarea
     id: logs
     attributes:
-      label: Relevant Logs
-      description: Paste any relevant logs or error output
+      label: Relevant output
+      description: Paste redacted logs or error output.
       render: shell
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: I searched existing issues for this problem.
+          required: true
+        - label: I removed all secrets and private information from this report.
+          required: true

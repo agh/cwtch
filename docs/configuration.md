@@ -1,151 +1,231 @@
-# Configuration Sync
+# Configuration sync
 
-Cwtch syncs Claude Code configuration (commands, agents, hooks, MCP servers) from Git repositories.
+cwtch reads `~/.cwtch/Cwtchfile`, manages source checkouts below `~/.cwtch/sources/`, and applies
+selected configuration to Claude Code's user paths.
 
-## The Cwtchfile
+## Create a Cwtchfile
 
-Configuration is defined in `~/.cwtch/Cwtchfile`:
+```bash
+cwtch sync init
+cwtch edit
+```
+
+The generated file has a fully commented `sources:` example. It is valid immediately, and
+`cwtch sync` reports:
+
+```text
+Nothing to sync (edit ~/.cwtch/Cwtchfile)
+```
+
+`sources:` may be absent, `null`, or an empty sequence.
+
+## Schema
 
 ```yaml
-# Base settings.json (optional)
-settings: owner/repo:path/to/settings.json
+# Optional base settings and CLAUDE.md. Both use repo:path.
+settings: owner/repo:path/settings.json
+claude_md: owner/repo:path/CLAUDE.md
 
-# Global CLAUDE.md (optional)
-claude_md: owner/repo:path/to/CLAUDE.md
-
-# Sources to sync
+# Optional: may be omitted, null, or [].
 sources:
-  # Personal agents and commands
-  - repo: myuser/claude-agents
+  - repo: owner/repo
     ref: main
-    commands: commands/
-    agents: agents/
-    hooks: hooks/
     as: personal
-
-  # Work tools
-  - repo: mycompany/claude-tools
+    skills: skills/
     commands: commands/
     agents: agents/
-    mcp: mcp-servers.json
-    as: work
-
-  # Just MCP servers (no namespace needed)
-  - repo: myuser/mcp-configs
-    mcp: servers.json
+    mcp: mcp.json
 ```
 
-## Commands
+### Top-level keys
 
-| Command | Description |
-|---------|-------------|
-| `cwtch sync` | Pull all sources and build `~/.claude/` |
-| `cwtch sync init` | Create an example Cwtchfile |
-| `cwtch sync check` | Validate Cwtchfile without syncing |
-| `cwtch edit` | Open Cwtchfile in your editor |
+| Key | Required | Meaning |
+|---|---|---|
+| `settings` | No | `repo:path` JSON file deep-merged into the Claude Code user settings |
+| `claude_md` | No | `repo:path` file linked as the user `CLAUDE.md` |
+| `sources` | No | Sequence of source definitions; absent, null, and empty are valid |
 
-## How Syncing Works
+Both sides of a `repo:path` value must be non-empty. For example, `settings: ":"` is invalid.
 
-When you run `cwtch sync`:
+### Source keys
 
-1. **Clone/update repositories** — Sources are cloned to `~/.cwtch/sources/`
-2. **Link commands/agents** — Symlinked to `~/.claude/{commands,agents}/{namespace}/`
-3. **Merge settings** — MCP servers are deep-merged into `~/.claude/settings.json`
-4. **Link CLAUDE.md** — Symlinked to `~/.claude/CLAUDE.md`
+| Key | Required | Meaning |
+|---|---|---|
+| `repo` | Yes | GitHub `owner/repo`, HTTPS URL, SSH URL, or absolute local path |
+| `ref` | No | Branch or tag; defaults to the remote's advertised HEAD, then `main` if discovery fails |
+| `as` | With `skills`, `commands`, or `agents` | Validated namespace used in destination path names |
+| `skills` | No | Directory whose child skill directories contain `SKILL.md` |
+| `commands` | No | Directory of legacy `*.md` commands converted into skills |
+| `agents` | No | Directory of agent Markdown files linked as one recursive source |
+| `mcp` | No | JSON file containing `{"mcpServers": {...}}` or a bare server map |
 
-The result:
+The `as` value follows the same rule as profile names:
+`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`, excluding `.` and `..`. Duplicate `as` values are invalid.
 
-```
-~/.claude/
-├── settings.json          # Merged from all sources
-├── CLAUDE.md              # Symlink → source
-├── commands/
-│   ├── personal/          # Symlink → myuser/claude-agents/commands/
-│   └── work/              # Symlink → mycompany/claude-tools/commands/
-└── agents/
-    ├── personal/          # Symlink → myuser/claude-agents/agents/
-    └── work/              # Symlink → mycompany/claude-tools/agents/
-```
+`hooks:` is not supported. Register hooks in `settings.json`, where Claude Code requires an event
+and matcher. A hooks directory on its own has no effect.
 
-Commands and agents are invoked with their namespace: `/personal/review`, `/work/deploy`.
+The literal `repo: owner/repo` placeholder is rejected. Replace it with a real source before
+uncommenting the example.
 
-## Cwtchfile Reference
+## Repository handling
 
-### Top-Level Keys
-
-| Key | Format | Description |
-|-----|--------|-------------|
-| `settings` | `owner/repo:path` | Base settings.json to copy |
-| `claude_md` | `owner/repo:path` | CLAUDE.md to symlink |
-| `sources` | list | Sources to sync (see below) |
-
-### Source Object
-
-| Key | Required | Description |
-|-----|----------|-------------|
-| `repo` | Yes | GitHub `owner/repo`, full URL, or local path |
-| `ref` | No | Branch or tag (default: `main`) |
-| `as` | When using commands/agents/hooks | Namespace for this source |
-| `commands` | No | Path to commands directory in repo |
-| `agents` | No | Path to agents directory in repo |
-| `hooks` | No | Path to hooks directory in repo |
-| `mcp` | No | Path to MCP servers JSON file |
-
-### Repo Formats
+Supported repository forms are:
 
 ```yaml
-# GitHub shorthand (recommended)
 repo: owner/repo
-
-# Full HTTPS URL
 repo: https://github.com/owner/repo.git
-
-# SSH URL
 repo: git@github.com:owner/repo.git
-
-# Local path (for development)
-repo: /path/to/local/repo
+repo: /absolute/path/to/local/repo
 ```
 
-## Validation
+Managed checkout directories use a sanitised repository string. Absolute local paths also receive
+the first eight hexadecimal characters of the path's SHA-256 digest, preventing different paths
+from sharing a checkout directory.
 
-The Cwtchfile is validated before syncing:
+When `ref` is absent, cwtch asks the remote which branch `HEAD` names. It falls back to `main` only
+when that lookup fails. Explicit refs must pass Git's ref-format validation and cannot begin with
+`-`.
 
-```bash
-$ cwtch sync check
-Checking ~/.cwtch/Cwtchfile...
-  settings:  agh/claude-base:settings.json
-  claude_md: (none)
-  sources:   2
-    [0] myuser/claude-agents → personal
-    [1] mycompany/tools → work
-[cwtch] Cwtchfile is valid
+Clones are shallow. Existing managed checkouts fetch the selected ref and reset a local branch to
+`FETCH_HEAD`. Local edits below `~/.cwtch/sources/` are discarded by design; do not use those
+directories as working copies. Clone, fetch, or checkout failures are source errors and make the
+overall sync exit with status `1`.
+
+## Outputs and merge rules
+
+Claude Code's configuration directory is `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
+
+### Settings
+
+`settings:` deep-merges the repository JSON into the existing user `settings.json`. Existing user
+values win when the same key exists; the repository file supplies defaults. When existing content
+changes, cwtch writes `settings.json.bak` before replacing it. If no target exists, cwtch creates
+one.
+
+### CLAUDE.md
+
+`claude_md:` creates a symlink at
+`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/CLAUDE.md`.
+
+An absent target or existing symlink can be replaced. A regular file blocks sync:
+
+```text
+CLAUDE.md exists and is not a symlink; move it or run 'cwtch sync --force'
 ```
 
-Validation rules:
-- Valid YAML syntax
-- `sources` must be a list
-- `settings` and `claude_md` must be `repo:path` format
-- Each source must have `repo`
-- `as` is required when `commands`, `agents`, or `hooks` are specified
-- No duplicate namespaces
+With `--force`, cwtch copies the regular file to `CLAUDE.md.bak` before replacing it with the
+symlink.
 
-## New Machine Setup
+### Skills
 
-```bash
-# 1. Install cwtch
-brew tap agh/cask && brew install cwtch
+For each child directory containing `SKILL.md`, this source:
 
-# 2. Link Cwtchfile from your dotfiles
-mkdir -p ~/.cwtch
-ln -s ~/dotfiles/Cwtchfile ~/.cwtch/Cwtchfile
-
-# 3. Sync configuration
-cwtch sync
-
-# 4. Authenticate with Claude
-claude login
-
-# 5. Save as a profile
-cwtch profile save work
+```yaml
+sources:
+  - repo: myuser/claude-skills
+    as: team
+    skills: skills/
 ```
+
+creates links such as:
+
+```text
+~/.claude/skills/team-review -> <source>/skills/review
+~/.claude/skills/team-deploy -> <source>/skills/deploy
+```
+
+The resulting skill names are `/team-review` and `/team-deploy`.
+
+### Legacy commands
+
+Claude Code now uses skills for new workflows. Each legacy command file is converted into a skill.
+For example:
+
+```text
+<source>/commands/review.md
+```
+
+with `as: team` becomes:
+
+```text
+~/.claude/skills/team-review/
+└── SKILL.md -> <source>/commands/review.md
+```
+
+The command is therefore invoked as `/team-review`, not `/team/review`. Symlinks from older cwtch
+versions at `~/.claude/commands/<as>` are removed when they point into cwtch's source directory.
+
+### Agents
+
+`agents:` creates one directory symlink:
+
+```text
+~/.claude/agents/team -> <source>/agents
+```
+
+Claude Code discovers agents recursively. The `name` in each agent file's frontmatter is its
+identity; the `as` directory does not rename the agent.
+
+### MCP servers
+
+User-scope MCP servers belong in `~/.claude.json`, not `settings.json`. When
+`CLAUDE_CONFIG_DIR` is set, cwtch uses `$CLAUDE_CONFIG_DIR/.claude.json`.
+
+For each source, cwtch normalises a wrapped `mcpServers` object or bare server map, then merges it
+into `.mcpServers`. Existing servers are retained; newly configured servers win on a duplicate
+name. Changes back up the previous file to `.claude.json.bak`. If the file is absent, cwtch creates
+it with a top-level `mcpServers` object.
+
+## Link safety and pruning
+
+cwtch only creates or replaces symlinks for linked outputs. If a skill, command, agent, or other
+link target already exists and is not a symlink, that source fails with:
+
+```text
+target exists and is not a symlink: <path>
+```
+
+cwtch never recursively removes such a target.
+
+`~/.cwtch/state/links` records every symlink created by the last successful run. On a later
+successful sync, a path no longer configured is removed only when it is still:
+
+- a symlink whose target is inside `~/.cwtch/sources/`; or
+- a converted command's `SKILL.md` symlink inside a directory cwtch created.
+
+Empty converted-command directories are removed afterwards. User files and links to other
+locations are not pruned.
+
+## Commands and flags
+
+| Command | Behaviour |
+|---|---|
+| `cwtch sync init` | Create a valid commented example; refuses to overwrite an existing Cwtchfile |
+| `cwtch edit` | Open the Cwtchfile with `$EDITOR`, or `vi` |
+| `cwtch sync check` | Print and validate the schema; warn when settings or `CLAUDE.md` would touch existing files |
+| `cwtch sync --dry-run` | Print planned clone, update, merge, link, and prune operations; change nothing and exit successfully |
+| `cwtch sync --force` | Permit a regular user `CLAUDE.md` to be backed up and replaced |
+| `cwtch sync` | Apply the configuration and report per-source summaries plus skill and agent counts |
+
+A complete run ends with `Sync complete`. Source failures are printed as they happen, followed by
+`Sync finished with N error(s)`, and the command exits with status `1`.
+
+## Migrating from 5.x
+
+Review the Cwtchfile before the first 6.0.0 sync:
+
+1. Remove every `hooks:` key and register hooks in `settings.json`.
+2. Expect `commands:` files to become skills named `/<as>-<name>`.
+3. Add `skills:` for native skill directories.
+4. Check for user files at intended link targets; cwtch will not replace regular files, except
+   `CLAUDE.md` when `--force` is supplied.
+5. Expect repository settings to be defaults merged beneath existing user values, rather than a
+   wholesale replacement.
+6. Move user-scope MCP expectations from `settings.json` to `~/.claude.json` or
+   `$CLAUDE_CONFIG_DIR/.claude.json`.
+7. Remove any profile-specific `profiles/<name>/Cwtchfile`; profile overlays no longer exist.
+8. Check every profile name and `as` value against the new validation rule.
+
+Run `cwtch sync check`, inspect `cwtch sync --dry-run`, then run `cwtch sync`. The manifest prunes
+obsolete managed links only when their targets remain inside cwtch's source directory.

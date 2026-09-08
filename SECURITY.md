@@ -1,40 +1,33 @@
-# Security Policy
+# Security policy
 
-## Supported Versions
+## Supported versions
 
-| Version | Supported          |
-| ------- | ------------------ |
-| 3.x     | :white_check_mark: |
-| < 3.0   | :x:                |
+| Version | Supported |
+|---|---|
+| Latest minor release | Yes |
+| Older releases | No |
 
-## Reporting a Vulnerability
+Update to the latest minor release before reporting a defect that may already be fixed.
 
-**Please do not report security vulnerabilities through public GitHub issues.**
+## Reporting a vulnerability
 
-Instead, please report them via email to: alex@howells.me
+Do not report security vulnerabilities through public GitHub issues.
 
-Include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
+Use
+[GitHub private vulnerability reporting](https://github.com/agh/cwtch/security/advisories/new) or
+email alex@howells.me. Include a description, reproduction steps, affected versions, potential
+impact, and a suggested fix when available. Never include a live token, API key, OAuth credential,
+private repository content, or unredacted personal path.
 
-### What to Expect
+## Credential and sync risks
 
-- **Response**: Within 48 hours acknowledging receipt
-- **Updates**: Every 5 business days on progress
-- **Resolution**: Target 90 days for fix
+cwtch stores plaintext, mode-`600` credentials and one-file backups below
+`~/.cwtch/profiles/`. OAuth snapshots are also restored to the default macOS Keychain entry.
+Commands that print environment exports, tokens, or API keys must be handled as secret-producing
+commands.
 
-### Disclosure Policy
+Configuration sync can merge settings, link skills and agents, replace `CLAUDE.md` when explicitly
+forced, and merge MCP server definitions. Only sync repositories and refs you trust.
 
-- We follow coordinated disclosure
-- Credit will be given to reporters (unless anonymity requested)
-- We will not pursue legal action against good-faith reporters
-
-## Security Best Practices
-
-When contributing:
-- Never commit secrets, tokens, or credentials
-- OAuth `.credential` files are stored with chmod 600
-- API key `.apikey` files are stored with chmod 600
-- Keychain credentials are stored using macOS security best practices
+See [docs/security.md](docs/security.md) for storage paths, authentication precedence, backup
+behaviour, process-argument exposure, and filesystem safeguards.
