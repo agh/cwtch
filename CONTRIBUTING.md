@@ -1,92 +1,99 @@
 # Contributing to cwtch
 
-Thank you for considering contributing! This document explains how to contribute.
+Contributions must preserve credential safety, macOS behaviour, Bash 3.2 compatibility, and the
+documented Cwtchfile contract.
 
-## Code of Conduct
+## Conduct
 
-This project follows the [Contributor Covenant](https://www.contributor-covenant.org/). Be respectful and constructive.
+Be respectful and constructive. The project follows the
+[Contributor Covenant](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
 
-## Getting Started
+## Before starting
 
-1. Fork the repository
-2. Clone your fork
-3. Set up the development environment (see README.md)
-4. Create a branch for your changes
+Search existing issues and pull requests. Open an issue before a significant command,
+authentication, storage, or configuration-format change so compatibility and migration can be
+agreed first.
 
-## Development Workflow
+## Development environment
 
-### Before You Start
+cwtch runs on macOS because OAuth switching uses Keychain. The Ubuntu CI job and development
+container exercise portable logic through mocks, but they cannot replace real macOS end-to-end
+coverage.
 
-- Check existing issues and PRs to avoid duplicates
-- For significant changes, open an issue first to discuss
+On macOS:
 
-### Making Changes
-
-1. Create a feature branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes following our style guide (see CLAUDE.md)
-
-3. Write or update tests
-
-4. Run the test suite:
-   ```bash
-   bats tests/
-   ```
-
-5. Run linting:
-   ```bash
-   shellcheck bin/cwtch lib/common.sh tests/*.bats
-   ```
-
-### Commit Messages
-
-Follow [Conventional Commits](https://www.conventionalcommits.org/):
-
-```
-type(scope): description
-
-[optional body]
-
-[optional footer]
+```bash
+brew install bats-core shellcheck shfmt jq yq
+make check
 ```
 
-Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
+Required development tools are Bash, Git, Make, bats 1.5 or later, shellcheck, shfmt, `jq`, and Mike
+Farah's real `yq` v4. Tool versions used by CI are pinned in the workflow and development
+environment. Update a version and its checksum together.
 
-Examples:
-- `feat(profile): add export command`
-- `fix(status): handle missing credential gracefully`
-- `docs: update installation instructions`
+Read [AGENTS.md](AGENTS.md) for architecture, functions, shell constraints, and test conventions.
 
-### Pull Requests
+## Make a change
 
-1. Push your branch to your fork
-2. Open a PR against the `main` branch
-3. Fill out the PR template completely
-4. Wait for CI to pass
-5. Address review feedback
+1. Create a branch from `main`.
+2. Make the smallest coherent change.
+3. Add or update focused tests for changed behaviour.
+4. Update user documentation and `CHANGELOG.md` when commands, output, storage, or the Cwtchfile
+   changes.
+5. Run the relevant checks, then `make check`.
 
-## Reporting Issues
+Use the repository targets:
 
-### Bug Reports
+| Command | Purpose |
+|---|---|
+| `make check` | Complete local CI check set |
+| `make lint` | shellcheck using `.shellcheckrc` |
+| `make fmt` | Apply `shfmt -i 2 -ci` |
+| `make fmt-check` | Check formatting without rewriting |
+| `make test` | Run all bats tests |
+| `make test-hermetic` | Run with isolated Git state and `USER` unset |
+| `make bash32-check` | Check macOS Bash 3.2 syntax |
+| `make e2e` | Run macOS platform integration checks |
 
-Use the bug report template. Include:
-- Steps to reproduce
-- Expected vs actual behavior
-- macOS version
-- Logs or error messages
+The CI matrix includes Ubuntu 24.04 and macOS 15 and 26. Portable tests must pass on both operating
+systems. Never run profile tests against real credentials, the maintainer's home directory, or an
+unmocked Keychain.
 
-### Feature Requests
+## Shell changes
 
-Use the feature request template. Include:
-- Problem you're trying to solve
-- Proposed solution
-- Alternatives you've considered
+- Keep `/bin/bash` 3.2 compatibility.
+- Use `[[ ... ]]`, `$()`, and two-space indentation.
+- Use `printf '%s\n'` for user-controlled values.
+- Keep each file to one responsibility; never compress statements to satisfy a length budget.
+- Run `make fmt` rather than hand-formatting.
+- Use the real `yq` v4 in tests and runtime code.
+- Preserve standard-output contracts; send progress output to standard error where necessary.
+- Write user-facing text in British English.
 
-## Questions?
+## Commit messages
 
-- Check existing documentation
-- Search closed issues
-- Open an issue
+Use [Conventional Commits](https://www.conventionalcommits.org/):
+
+```text
+type(scope): imperative description
+```
+
+Common types are `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, and `chore`.
+
+## Pull requests
+
+Describe the problem, the root cause for a fix, and exactly what changed. Name the relevant files,
+functions, commands, and data flow. Include the commands run and their results, and state related
+behaviour deliberately left outside the change.
+
+## Releases
+
+Release preparation updates `VERSION` and `CHANGELOG.md`, runs the complete checks, creates a
+signed `vX.Y.Z` tag, pushes the commit and tag, then updates the Homebrew formula checksum. See the
+full procedure in [AGENTS.md](AGENTS.md#release-procedure).
+
+## Reporting issues
+
+Bug reports should contain reproducible steps, expected and actual behaviour, `cwtch --version`,
+the macOS and shell versions, and redacted output. Use [SECURITY.md](SECURITY.md) rather than a
+public issue for vulnerabilities.
