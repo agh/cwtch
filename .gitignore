@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+._*
+.AppleDouble
+.LSOverride
+.Spotlight-V100
+.Trashes
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Test and build scratch
+dist/
+tests/tmp/
+*.tmp
+*.orig
+*.rej
+
+# Local tool output
+shellcheck.json
+shellcheck.sarif
+results.sarif

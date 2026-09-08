@@ -1,0 +1,18 @@
+# shellcheck configuration for the bats suite.
+#
+# A .shellcheckrc REPLACES the one found higher up rather than extending it, so
+# the optional checks wanted here are repeated. `require-variable-braces`
+# (SC2250) is deliberately absent: `$status`, `$output` and `$stderr` are bats'
+# documented spelling and it fires on every assertion in the suite.
+enable=add-default-case
+enable=avoid-negated-conditions
+enable=avoid-nullary-conditions
+enable=deprecate-which
+enable=quote-safe-variables
+enable=require-double-brackets
+enable=useless-use-of-cat
+
+# bats defines $status/$output/$lines/$stderr for the test body, so a bare
+# `[[ "$?" -eq 0 ]]` after a command run outside `run` is redundant rather than
+# wrong; bats already fails the test when the command returns non-zero.
+disable=SC2181
