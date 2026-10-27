@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [6.0.1] - 2026-10-27
+
 ### Fixed
 
 - Preview and report stale-link pruning when every Cwtchfile declaration has been removed,
@@ -288,7 +290,8 @@ cwtch refresh -q 2>/dev/null
 - bats test suite
 - GitHub Actions CI
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v6.0.1...HEAD
+[6.0.1]: https://github.com/agh/cwtch/compare/v6.0.0...v6.0.1
 [6.0.0]: https://github.com/agh/cwtch/compare/v5.3.0...v6.0.0
 [5.3.0]: https://github.com/agh/cwtch/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/agh/cwtch/compare/v5.1.0...v5.2.0
