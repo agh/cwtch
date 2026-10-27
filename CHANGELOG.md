@@ -26,8 +26,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- Preview and report stale-link pruning when every Cwtchfile declaration has been removed,
-  instead of incorrectly reporting "Nothing to sync"
 - Reassemble indented, wrapped setup tokens without saving a valid-looking fragment or appending
   footer prose; accept repeated copies of one token and reject oversized candidates; warn when a
   saved token is not the usual 108 characters
@@ -49,14 +47,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Send usage Authorization headers and restored Keychain credentials on standard input rather
+  than exposing secrets in `curl` or `security` argument lists; like Claude Code, credentials
+  longer than one `security -i` line (4,032 characters, hex-encoded) still go through argv
+
+## [6.0.1] - 2026-10-27
+
+### Fixed
+
+- Preview and report stale-link pruning when every Cwtchfile declaration has been removed,
+  instead of incorrectly reporting "Nothing to sync"
+
+### Security
+
 - Preserve existing JSON configuration and backup permission modes, create new JSON files at
   mode `600`, and use unique temporary files for atomic writes without following predictable
   `.tmp` symlinks
 - Reject embedded credentials in repository URLs before invoking Git, redact credential-bearing
   userinfo in repository displays and checkout slugs, and retain username-only SSH support
-- Send usage Authorization headers and restored Keychain credentials on standard input rather
-  than exposing secrets in `curl` or `security` argument lists; like Claude Code, credentials
-  longer than one `security -i` line (4,032 characters, hex-encoded) still go through argv
 
 ## [6.0.0] - 2026-09-07
 
@@ -326,7 +334,8 @@ cwtch refresh -q 2>/dev/null
 - bats test suite
 - GitHub Actions CI
 
-[Unreleased]: https://github.com/agh/cwtch/compare/v6.0.0...HEAD
+[Unreleased]: https://github.com/agh/cwtch/compare/v6.0.1...HEAD
+[6.0.1]: https://github.com/agh/cwtch/compare/v6.0.0...v6.0.1
 [6.0.0]: https://github.com/agh/cwtch/compare/v5.3.0...v6.0.0
 [5.3.0]: https://github.com/agh/cwtch/compare/v5.2.0...v5.3.0
 [5.2.0]: https://github.com/agh/cwtch/compare/v5.1.0...v5.2.0
