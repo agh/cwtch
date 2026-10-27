@@ -211,6 +211,97 @@ claude_md: owner/repo:config/CLAUDE.md"
   assert_status 0
 }
 
+@test "credential-bearing source URLs are rejected without exposing userinfo" {
+  local repo
+  for repo in \
+    "https://u:SECRET@example.com/o/r.git" \
+    "https://SECRET@example.com/o/r.git" \
+    "http://SECRET@example.com/o/r.git" \
+    "HTTPS://SECRET@example.com/o/r.git" \
+    "ssh://git:SECRET@example.com/o/r.git" \
+    "git://u:SECRET@example.com/o/r.git"; do
+    create_cwtchfile "sources:
+  - repo: ${repo}
+    skills: skills/"
+    run --separate-stderr cwtch sync check
+    assert_status 1
+    assert_output_lacks "SECRET"
+    [[ "${stderr}" != *"SECRET"* ]]
+    assert_output_contains "://***@example.com/o/r.git"
+    assert_stderr_contains "://***@example.com/o/r.git"
+    assert_stderr_contains "contains embedded credentials"
+    assert_stderr_contains "Git credential helper or SSH"
+  done
+}
+
+@test "credential-bearing top-level repo references are rejected and redacted" {
+  local field
+  for field in settings claude_md; do
+    create_cwtchfile "${field}: https://u:SECRET@example.com/o/r.git:config/file"
+    run --separate-stderr cwtch sync check
+    assert_status 1
+    assert_output_lacks "SECRET"
+    [[ "${stderr}" != *"SECRET"* ]]
+    assert_output_contains "https://***@example.com/o/r.git:config/file"
+    assert_stderr_contains "Git credential helper or SSH"
+  done
+}
+
+@test "sync rejects credential URLs before passing them to Git" {
+  create_cwtchfile "sources:
+  - repo: https://SECRET@example.com/o/r.git
+    mcp: mcp.json"
+  local flag
+  for flag in "" "--dry-run"; do
+    if [[ -n "${flag}" ]]; then
+      run --separate-stderr env GIT_TRACE="${HOME}/git-trace" cwtch sync "${flag}"
+    else
+      run --separate-stderr env GIT_TRACE="${HOME}/git-trace" cwtch sync
+    fi
+    assert_status 1
+    assert_output_lacks "SECRET"
+    [[ "${stderr}" != *"SECRET"* ]]
+    assert_stderr_contains "Git credential helper or SSH"
+    [[ ! -e "${HOME}/git-trace" ]]
+    [[ ! -d "${HOME}/.cwtch/sources" ]]
+  done
+}
+
+@test "SSH usernames and URL ports or path at-signs are not credentials" {
+  create_cwtchfile "settings: ssh://git@github.com/o/r.git:config/settings.json
+claude_md: git@github.com:o/r.git:config/CLAUDE.md
+sources:
+  - repo: git@github.com:o/r.git
+  - repo: ssh://git@github.com/o/r.git
+  - repo: https://github.com:443/o/r.git
+  - repo: https://github.com/o/r@name.git"
+  run cwtch sync check
+  assert_status 0
+  assert_output_contains "git@github.com:o/r.git"
+  assert_output_contains "ssh://git@github.com/o/r.git"
+}
+
+@test "repo_redact hides all userinfo credentials but preserves SSH usernames" {
+  local repo
+  for repo in \
+    "https://u:SECRET@example.com/o/r.git" \
+    "https://SECRET@example.com/o/r.git" \
+    "ssh://git:SECRET@example.com/o/r.git"; do
+    run_lib repo_redact "${repo}"
+    assert_status 0
+    assert_output_lacks "SECRET"
+    assert_output_contains "://***@example.com/o/r.git"
+  done
+  for repo in \
+    "git@github.com:o/r.git" \
+    "ssh://git@github.com/o/r.git" \
+    "https://example.com/o/r@name.git"; do
+    run_lib repo_redact "${repo}"
+    assert_status 0
+    [[ "${output}" == "${repo}" ]]
+  done
+}
+
 # --- error reporting ---------------------------------------------------------
 
 @test "F19: every validation error is reported, not just the first" {

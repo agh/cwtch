@@ -53,6 +53,12 @@ run_lib() {
   [[ "${first}" =~ -[0-9a-f]{8}$ ]]
 }
 
+@test "repo_local_path never includes embedded credentials in its slug" {
+  run_lib repo_local_path "https://u:SECRET@example.com/o/r.git"
+  assert_status 0
+  assert_output_lacks "SECRET"
+}
+
 @test "F9: syncing two same-named local repos produces two clones" {
   local one two
   one="$(create_mock_repo a/tools)"
@@ -569,6 +575,56 @@ claude_md: ${repo}:config/CLAUDE.md"
   assert_status 0
   [[ ! -e "${HOME}/.claude/agents/demo" ]]
   [[ ! -d "${HOME}/.claude/agents" ]]
+}
+
+@test "an empty configuration previews every prune without changing managed state" {
+  local repo link manifest links_before=""
+  repo="$(create_mock_repo demo)"
+  create_cwtchfile "claude_md: ${repo}:config/CLAUDE.md
+sources:
+  - repo: ${repo}
+    as: demo
+    skills: skills/
+    commands: commands/
+    agents: agents/"
+  run cwtch sync
+  assert_status 0
+  manifest="$(cat "${HOME}/.cwtch/state/links")"
+  cp "${HOME}/.cwtch/state/links" "${HOME}/manifest.before"
+  while IFS= read -r link; do
+    links_before="${links_before}${link} -> $(readlink "${link}")"$'\n'
+  done <<< "${manifest}"
+  create_cwtchfile "sources: []"
+  cp "${HOME}/.cwtch/Cwtchfile" "${HOME}/Cwtchfile.before"
+
+  run cwtch sync --dry-run
+  assert_status 0
+  assert_output_lacks "Nothing to sync"
+  assert_output_contains "Dry run: nothing was changed"
+  local links_after=""
+  while IFS= read -r link; do
+    assert_output_contains "would remove ${link}"
+    [[ -L "${link}" ]]
+    links_after="${links_after}${link} -> $(readlink "${link}")"$'\n'
+  done <<< "${manifest}"
+  [[ "${links_after}" == "${links_before}" ]]
+  cmp "${HOME}/manifest.before" "${HOME}/.cwtch/state/links"
+  cmp "${HOME}/Cwtchfile.before" "${HOME}/.cwtch/Cwtchfile"
+
+  run cwtch sync
+  assert_status 0
+  assert_output_lacks "Nothing to sync"
+  assert_output_contains "Sync complete"
+  while IFS= read -r link; do
+    assert_output_contains "removed ${link}"
+    [[ ! -L "${link}" ]]
+    [[ ! -e "${link}" ]]
+  done <<< "${manifest}"
+  [[ ! -s "${HOME}/.cwtch/state/links" ]]
+
+  run cwtch sync --dry-run
+  assert_status 0
+  assert_output_contains "Nothing to sync"
 }
 
 @test "F8: renaming a namespace does not leave the old link behind" {

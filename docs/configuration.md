@@ -76,8 +76,14 @@ Supported repository forms are:
 repo: owner/repo
 repo: https://github.com/owner/repo.git
 repo: git@github.com:owner/repo.git
+repo: ssh://git@github.com/owner/repo.git
 repo: /absolute/path/to/local/repo
 ```
+
+Embedded credentials are rejected in `sources[].repo`, `settings`, and `claude_md` repository
+URLs. This means any `scheme://user:password@host/...` and any HTTP(S) userinfo, including
+`https://token@host/...`; username-only SSH URLs remain valid. Use a Git credential helper or SSH
+for authentication. Repository displays redact credential-bearing userinfo as `***`.
 
 Managed checkout directories use a sanitised repository string. Absolute local paths also receive
 the first eight hexadecimal characters of the path's SHA-256 digest, preventing different paths
@@ -101,7 +107,8 @@ Claude Code's configuration directory is `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
 `settings:` deep-merges the repository JSON into the existing user `settings.json`. Existing user
 values win when the same key exists; the repository file supplies defaults. When existing content
 changes, cwtch writes `settings.json.bak` before replacing it. If no target exists, cwtch creates
-one.
+one at mode `600`. Existing permission modes are preserved for both the target and its backup;
+writes use unique temporary files and atomic replacement.
 
 ### CLAUDE.md
 
@@ -175,7 +182,8 @@ User-scope MCP servers belong in `~/.claude.json`, not `settings.json`. When
 For each source, cwtch normalises a wrapped `mcpServers` object or bare server map, then merges it
 into `.mcpServers`. Existing servers are retained; newly configured servers win on a duplicate
 name. Changes back up the previous file to `.claude.json.bak`. If the file is absent, cwtch creates
-it with a top-level `mcpServers` object.
+it with a top-level `mcpServers` object and mode `600`. Existing permission modes are preserved
+for both the target and its backup; writes use unique temporary files and atomic replacement.
 
 ## Link safety and pruning
 
@@ -196,6 +204,10 @@ successful sync, a path no longer configured is removed only when it is still:
 
 Empty converted-command directories are removed afterwards. User files and links to other
 locations are not pruned.
+
+An empty Cwtchfile still prunes links from the previous sync. `sync --dry-run` lists the same
+removals without changing files or the manifest; neither preview nor apply reports "Nothing to
+sync" while a populated manifest is being processed.
 
 ## Commands and flags
 

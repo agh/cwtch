@@ -123,6 +123,19 @@ teardown() { teardown_test_env; }
   assert_output_contains "not synced"
 }
 
+@test "status redacts credentials even when the configuration is invalid" {
+  create_cwtchfile "sources:
+  - repo: https://u:SECRET@example.com/o/r.git
+  - repo: https://SECRET@example.com/o/r.git
+  - repo: ssh://git:SECRET@example.com/o/r.git"
+  run --separate-stderr cwtch status
+  assert_status 0
+  assert_output_lacks "SECRET"
+  [[ "${stderr}" != *"SECRET"* ]]
+  assert_output_contains "https://***@example.com/o/r.git"
+  assert_output_contains "ssh://***@example.com/o/r.git"
+}
+
 @test "status reports a synced source with its short commit" {
   local repo commit
   repo="$(create_mock_repo demo)"

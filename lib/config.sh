@@ -31,6 +31,28 @@ config_source_indices() {
 config_ref_repo() { printf '%s\n' "${1%:*}"; }
 config_ref_path() { printf '%s\n' "${1##*:}"; }
 
+repo_has_credentials() {
+  local password_re='^[[:alpha:]][[:alnum:]+.-]*://[^/?#]*:[^/?#]*@'
+  local http_userinfo_re='^[hH][tT][tT][pP][sS]?://[^/?#]*@'
+  [[ "$1" =~ ${password_re} ]] || [[ "$1" =~ ${http_userinfo_re} ]]
+}
+
+repo_redact() {
+  local userinfo_re='^([[:alpha:]][[:alnum:]+.-]*://)[^/?#]*@(.*)$'
+  if repo_has_credentials "$1" && [[ "$1" =~ ${userinfo_re} ]]; then
+    printf '%s***@%s\n' "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}"
+  else
+    printf '%s\n' "$1"
+  fi
+}
+
+config_validate_repo_url() {
+  if repo_has_credentials "$1"; then
+    err "Cwtchfile: repository URL '$(repo_redact "$1")' contains embedded credentials; use a Git credential helper or SSH"
+    return 1
+  fi
+}
+
 config_valid_ref() {
   # A leading dash would be read as a git option; check-ref-format has no '--'.
   [[ "$1" != -* ]] && git check-ref-format --allow-onelevel "$1" >/dev/null 2>&1
@@ -39,6 +61,7 @@ config_valid_ref() {
 config_validate_ref_field() {
   local key="$1" value="$2" repo path
   [[ -n "${value}" ]] || return 0
+  config_validate_repo_url "${value}" || return 1
   repo="$(config_ref_repo "${value}")"
   path="$(config_ref_path "${value}")"
   if [[ "${value}" != *:* ]] || [[ -z "${repo}" ]] || [[ -z "${path}" ]]; then
@@ -48,8 +71,9 @@ config_validate_ref_field() {
 }
 
 config_validate_source() {
-  local idx="$1" errors=0 repo ref as skills commands agents hooks
+  local idx="$1" errors=0 repo display ref as skills commands agents hooks
   repo="$(config_source_get "${idx}" repo)"
+  display="$(repo_redact "${repo}")"
   ref="$(config_source_get "${idx}" ref)"
   as="$(config_source_get "${idx}" as)"
   skills="$(config_source_get "${idx}" skills)"
@@ -61,11 +85,12 @@ config_validate_source() {
     err "Cwtchfile: source[${idx}] missing required 'repo'"
     return 1
   fi
+  config_validate_repo_url "${repo}" || errors=$((errors + 1))
   if [[ "${repo}" == "owner/repo" ]]; then
     err "Cwtchfile: source[${idx}]: replace the 'owner/repo' placeholder from 'cwtch sync init'"
     errors=$((errors + 1))
   elif [[ "${repo}" != */* ]]; then
-    err "Cwtchfile: source[${idx}] invalid repo format '${repo}'"
+    err "Cwtchfile: source[${idx}] invalid repo format '${display}'"
     errors=$((errors + 1))
   fi
   if [[ -n "${hooks}" ]]; then
@@ -73,7 +98,7 @@ config_validate_source() {
     errors=$((errors + 1))
   fi
   if [[ -n "${skills}${commands}${agents}" ]] && [[ -z "${as}" ]]; then
-    err "Cwtchfile: source[${idx}] (${repo}) requires 'as' when skills/commands/agents specified"
+    err "Cwtchfile: source[${idx}] (${display}) requires 'as' when skills/commands/agents specified"
     errors=$((errors + 1))
   fi
   if [[ -n "${as}" ]] && ! validate_name "${as}"; then
@@ -154,14 +179,14 @@ config_check() {
   claude_md="$(config_get claude_md)"
   count="$(config_source_count)"
 
-  printf '  settings:  %s\n' "${settings:-"(none)"}"
-  printf '  claude_md: %s\n' "${claude_md:-"(none)"}"
+  printf '  settings:  %s\n' "$(repo_redact "${settings:-"(none)"}")"
+  printf '  claude_md: %s\n' "$(repo_redact "${claude_md:-"(none)"}")"
   printf '  sources:   %s\n' "${count}"
 
   for idx in $(config_source_indices); do
     repo="$(config_source_get "${idx}" repo)"
     as="$(config_source_get "${idx}" as)"
-    printf '    [%s] %s %s %s\n' "${idx}" "${repo}" "${SYM_ARROW}" "${as:-"(no namespace)"}"
+    printf '    [%s] %s %s %s\n' "${idx}" "$(repo_redact "${repo}")" "${SYM_ARROW}" "${as:-"(no namespace)"}"
   done
 
   config_check_targets "${settings}" "${claude_md}"

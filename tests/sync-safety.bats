@@ -144,6 +144,144 @@ sources:
   [[ "$(jq -r 'has("mcpServers")' "${HOME}/.claude/settings.json")" == "false" ]]
 }
 
+@test "JSON merges preserve private target and backup modes under umask 022" {
+  local repo target
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude"
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    printf '%s\n' '{"private":"original"}' > "${target}"
+    chmod 600 "${target}"
+    printf '%s\n' '{}' > "${target}.bak"
+    chmod 644 "${target}.bak"
+  done
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources:
+  - repo: ${repo}
+    mcp: mcp.json"
+  run bash -c 'umask 022; cwtch sync'
+  assert_status 0
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    assert_file_mode "${target}" 600
+    assert_file_mode "${target}.bak" 600
+    [[ "$(jq -r '.private' "${target}.bak")" == "original" ]]
+  done
+  [[ "$(jq -r '.mcpServers.demo.command' "${HOME}/.claude.json")" == "demo" ]]
+  [[ "$(jq -r '.env.FROM_BASE' "${HOME}/.claude/settings.json")" == "1" ]]
+}
+
+@test "new JSON files are private regardless of the caller's umask" {
+  local repo mask
+  repo="$(create_mock_repo demo)"
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources:
+  - repo: ${repo}
+    mcp: mcp.json"
+  for mask in 000 022 077; do
+    rm -f "${HOME}/.claude/settings.json" "${HOME}/.claude.json"
+    run bash -c 'umask "$1"; cwtch sync' _ "${mask}"
+    assert_status 0
+    assert_file_mode "${HOME}/.claude/settings.json" 600
+    assert_file_mode "${HOME}/.claude.json" 600
+  done
+}
+
+@test "JSON merges retain an intentionally shared target mode" {
+  local repo
+  repo="$(create_mock_repo demo)"
+  printf '%s\n' '{}' > "${HOME}/.claude.json"
+  chmod 640 "${HOME}/.claude.json"
+  create_cwtchfile "sources:
+  - repo: ${repo}
+    mcp: mcp.json"
+  run bash -c 'umask 077; cwtch sync'
+  assert_status 0
+  assert_file_mode "${HOME}/.claude.json" 640
+  assert_file_mode "${HOME}/.claude.json.bak" 640
+}
+
+@test "JSON writes never follow a pre-existing predictable temporary symlink" {
+  local repo target
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude"
+  printf 'untouched\n' > "${HOME}/sentinel"
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    ln -s "${HOME}/sentinel" "${target}.tmp"
+  done
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources:
+  - repo: ${repo}
+    mcp: mcp.json"
+  run cwtch sync
+  assert_status 0
+  [[ "$(cat "${HOME}/sentinel")" == "untouched" ]]
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    [[ -L "${target}.tmp" ]]
+    [[ "$(readlink "${target}.tmp")" == "${HOME}/sentinel" ]]
+    jq -e 'type == "object"' "${target}" >/dev/null
+  done
+}
+
+@test "JSON write failures remove the private temporary file and report an error" {
+  printf '%s\n' '{}' > "${HOME}/.claude.json"
+  run --separate-stderr bash -c '
+    set -euo pipefail
+    source "${ROOT}/lib/common.sh"
+    source "${ROOT}/lib/config.sh"
+    source "${ROOT}/lib/sync.sh"
+    mv() { return 1; }
+    sync_write_json "${CLAUDE_JSON}" "{\"changed\":true}"
+  '
+  assert_status 1
+  assert_stderr_contains "Failed to write JSON"
+  [[ "$(cat "${HOME}/.claude.json")" == "{}" ]]
+  local files=("${HOME}"/.claude.json.*)
+  [[ "${#files[@]}" -eq 1 ]]
+  [[ ! -e "${files[0]}" ]]
+}
+
+@test "JSON backups replace symlinks without writing through them" {
+  local repo target
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude"
+  printf 'untouched\n' > "${HOME}/sentinel"
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    printf '%s\n' '{"private":"original"}' > "${target}"
+    chmod 600 "${target}"
+    ln -s "${HOME}/sentinel" "${target}.bak"
+  done
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources:
+  - repo: ${repo}
+    mcp: mcp.json"
+  run cwtch sync
+  assert_status 0
+  [[ "$(cat "${HOME}/sentinel")" == "untouched" ]]
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json"; do
+    [[ ! -L "${target}.bak" ]]
+    assert_file_mode "${target}.bak" 600
+    [[ "$(jq -r '.private' "${target}.bak")" == "original" ]]
+  done
+}
+
+@test "JSON backup failures clean up without replacing the old backup" {
+  printf '%s\n' '{}' > "${HOME}/.claude.json"
+  printf '%s\n' '{"previous":true}' > "${HOME}/.claude.json.bak"
+  run --separate-stderr bash -c '
+    set -euo pipefail
+    source "${ROOT}/lib/common.sh"
+    source "${ROOT}/lib/config.sh"
+    source "${ROOT}/lib/sync.sh"
+    cp() { return 1; }
+    sync_backup_json "${CLAUDE_JSON}"
+  '
+  assert_status 1
+  assert_stderr_contains "Failed to back up JSON"
+  [[ "$(cat "${HOME}/.claude.json.bak")" == '{"previous":true}' ]]
+  local files=("${HOME}"/.claude.json.bak.*)
+  [[ "${#files[@]}" -eq 1 ]]
+  [[ ! -e "${files[0]}" ]]
+}
+
 @test "F3: a failing source leaves earlier outputs intact" {
   local repo
   repo="$(create_mock_repo demo)"

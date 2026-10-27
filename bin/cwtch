@@ -452,6 +452,7 @@ status_sources() {
     repo="$(config_source_get "${idx}" repo)" || repo=""
     as="$(config_source_get "${idx}" as)" || as=""
     path="$(repo_local_path "${repo}")" || path=""
+    repo="$(repo_redact "${repo}")"
     if [[ -n "${path}" ]] && [[ -d "${path}/.git" ]]; then
       commit="$(git -C "${path}" log -1 --format='%h' 2>/dev/null)" || commit="?"
       printf '  %b %s %b %s %b\n' "${C_GREEN}${SYM_CHECK}${C_RESET}" "${repo}" \
