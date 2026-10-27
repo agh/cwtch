@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Preview and report stale-link pruning when every Cwtchfile declaration has been removed,
+  instead of incorrectly reporting "Nothing to sync"
+
+### Security
+
+- Preserve existing JSON configuration and backup permission modes, create new JSON files at
+  mode `600`, and use unique temporary files for atomic writes without following predictable
+  `.tmp` symlinks
+- Reject embedded credentials in repository URLs before invoking Git, redact credential-bearing
+  userinfo in repository displays and checkout slugs, and retain username-only SSH support
+
 ## [6.0.0] - 2026-09-07
 
 ### Breaking

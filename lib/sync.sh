@@ -21,6 +21,7 @@ repo_to_url() {
 
 repo_local_path() {
   local repo="$1" slug digest
+  repo="$(repo_redact "${repo}")"
   slug="$(printf '%s' "${repo}" | LC_ALL=C sed -e 's/[^A-Za-z0-9._-]/-/g' -e 's/-\{2,\}/-/g' -e 's/^-//' -e 's/-$//')"
   [[ -n "${slug}" ]] || slug="source"
   if [[ "${repo}" == /* ]]; then
@@ -41,7 +42,9 @@ sync_default_ref() {
 # Clone or update <repo> at <ref>; sets SYNC_REPO_PATH.
 # 0 = ready, 1 = failed, 2 = dry run with nothing on disk yet.
 sync_repo() {
-  local repo="$1" ref="${2:-}" path url
+  local repo="$1" ref="${2:-}" path url display
+  config_validate_repo_url "${repo}" || return 1
+  display="$(repo_redact "${repo}")"
   path="$(repo_local_path "${repo}")"
   url="$(repo_to_url "${repo}")"
   [[ -n "${ref}" ]] || ref="$(sync_default_ref "${url}")"
@@ -51,12 +54,12 @@ sync_repo() {
 
   if [[ "${SYNC_DRY_RUN}" == true ]]; then
     if [[ -d "${path}/.git" ]]; then
-      info "would update ${repo} (${ref})"
+      info "would update ${display} (${ref})"
       SYNC_SEEN="${SYNC_SEEN}${path} ${ref}"$'\n'
       return 0
     fi
     if ! printf '%s' "${SYNC_MISSING}" | grep -Fxq -e "${path}"; then
-      info "would clone ${repo} (${ref})"
+      info "would clone ${display} (${ref})"
       SYNC_MISSING="${SYNC_MISSING}${path}"$'\n'
     fi
     SYNC_SKIPPED=true
@@ -65,28 +68,28 @@ sync_repo() {
 
   mkdir -p "${SOURCES_DIR}" || return 1
   if [[ -d "${path}/.git" ]]; then
-    info "Updating ${repo}..."
+    info "Updating ${display}..."
     git -C "${path}" fetch --quiet --depth 1 origin -- "${ref}" ||
       {
-        err "Failed to fetch '${ref}' from ${repo}"
+        err "Failed to fetch '${ref}' from ${display}"
         return 1
       }
     git -C "${path}" checkout --quiet -B "${ref}" FETCH_HEAD ||
       {
-        err "Failed to check out '${ref}' of ${repo}"
+        err "Failed to check out '${ref}' of ${display}"
         return 1
       }
     # Managed checkouts are disposable: drop any local edits to tracked files.
     git -C "${path}" reset --quiet --hard FETCH_HEAD ||
       {
-        err "Failed to reset '${ref}' of ${repo}"
+        err "Failed to reset '${ref}' of ${display}"
         return 1
       }
   else
-    info "Cloning ${repo}..."
+    info "Cloning ${display}..."
     git clone --quiet --depth 1 --branch "${ref}" -- "${url}" "${path}" ||
       {
-        err "Failed to clone ${repo} (${ref})"
+        err "Failed to clone ${display} (${ref})"
         return 1
       }
   fi
@@ -203,10 +206,34 @@ sync_drop_legacy() {
 }
 
 sync_write_json() {
-  local target="$1" content="$2"
+  local target="$1" content="$2" tmp mode=600
   mkdir -p "$(dirname "${target}")" || return 1
-  printf '%s\n' "${content}" >"${target}.tmp" || return 1
-  mv "${target}.tmp" "${target}"
+  # Both JSON outputs can contain secrets: preserve existing modes, default to 600.
+  if [[ -e "${target}" ]]; then
+    mode="$(stat -L -f '%Lp' "${target}" 2>/dev/null)" ||
+      mode="$(stat -L -c '%a' "${target}")" || return 1
+  fi
+  tmp="$(mktemp "${target}.XXXXXX")" || return 1
+  if ! {
+    chmod 600 "${tmp}" &&
+      printf '%s\n' "${content}" >"${tmp}" &&
+      chmod "${mode}" "${tmp}" &&
+      mv -f "${tmp}" "${target}"
+  }; then
+    err "Failed to write JSON: ${target}"
+    rm -f "${tmp}"
+    return 1
+  fi
+}
+
+sync_backup_json() {
+  local target="$1" tmp
+  tmp="$(mktemp "${target}.bak.XXXXXX")" || return 1
+  if ! { cp -p "${target}" "${tmp}" && mv -f "${tmp}" "${target}.bak"; }; then
+    err "Failed to back up JSON: ${target}"
+    rm -f "${tmp}"
+    return 1
+  fi
 }
 
 # Base settings supply defaults; whatever is already in settings.json wins.
@@ -228,7 +255,7 @@ sync_settings() {
       cwtch_note "    would merge settings into ${target} (backup ${target}.bak)"
       return 0
     fi
-    cp "${target}" "${target}.bak" || return 1
+    sync_backup_json "${target}" || return 1
   else
     merged="$(jq . "${base}")" || return 1
     if [[ "${SYNC_DRY_RUN}" == true ]]; then
@@ -263,7 +290,7 @@ sync_mcp() {
       cwtch_note "    would merge MCP servers into ${target} (backup ${target}.bak)"
       return 0
     fi
-    cp "${target}" "${target}.bak" || return 1
+    sync_backup_json "${target}" || return 1
   else
     merged="$(jq -n --argjson new "${servers}" '{mcpServers: $new}')" || return 1
     if [[ "${SYNC_DRY_RUN}" == true ]]; then
@@ -361,6 +388,7 @@ EOF
 
 sync_summary() {
   local repo="$1" ns="$2" parts="$3" summary="" mark="${C_GREEN}${SYM_CHECK}${C_RESET}"
+  repo="$(repo_redact "${repo}")"
   [[ -n "${parts}" ]] && summary=" ${C_DIM}(${parts})${C_RESET}"
   [[ "${SYNC_DRY_RUN}" == true ]] && mark="${C_CYAN}${SYM_DOT}${C_RESET}"
   if [[ -n "${ns}" ]]; then
@@ -434,6 +462,7 @@ sync_top_level() {
   sync_repo "${repo}" "" || rc=$?
   [[ ${rc} -eq 2 ]] && return 0
   [[ ${rc} -eq 0 ]] || return 1
+  repo="$(repo_redact "${repo}")"
   if [[ ! -f "${SYNC_REPO_PATH}/${file}" ]]; then
     err "${kind} file not found: ${SYNC_REPO_PATH}/${file}"
     return 1
@@ -476,11 +505,8 @@ do_sync() {
   settings_ref="$(config_get settings)"
   claude_md_ref="$(config_get claude_md)"
   count="$(config_source_count)"
-  if [[ -z "${settings_ref}" ]] && [[ -z "${claude_md_ref}" ]] && [[ "${count}" -eq 0 ]]; then
-    if [[ "${SYNC_DRY_RUN}" != true ]] && [[ -f "${LINKS_MANIFEST}" ]]; then
-      sync_prune_links
-      sync_write_manifest false
-    fi
+  if [[ -z "${settings_ref}" ]] && [[ -z "${claude_md_ref}" ]] &&
+    [[ "${count}" -eq 0 ]] && [[ ! -s "${LINKS_MANIFEST}" ]]; then
     info "Nothing to sync (edit $(sync_tilde "${CWTCHFILE}" || true))"
     return 0
   fi

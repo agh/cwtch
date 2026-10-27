@@ -71,9 +71,20 @@ credentials as secrets too.
 Only sync repositories and refs you trust. A mutable branch can change without a cwtch update.
 Managed source checkouts are disposable and local edits are discarded.
 
+Repository URLs must not embed credentials. cwtch rejects `scheme://user:password@host/...`
+for any scheme and all HTTP(S) userinfo, including `https://token@host/...`. Use a Git credential
+helper or SSH instead. Username-only SSH forms such as `git@github.com:owner/repo.git` and
+`ssh://git@github.com/owner/repo.git` remain supported. Diagnostics and repository displays redact
+credential-bearing userinfo as `***`, even when the configuration is invalid.
+
 Existing settings, `CLAUDE.md`, and `.claude.json` may produce `.bak` files. Those backups can
 contain private paths, commands, MCP credentials, or other sensitive configuration; protect them
 accordingly.
+
+JSON merges use private, uniquely created temporary files beside the destination, then atomically
+replace it. Existing `settings.json` and `.claude.json` permission modes are preserved; new files
+use mode `600` regardless of the caller's umask. Their `.bak` files preserve the original modes
+and are also replaced atomically. Existing predictable `.tmp` paths are never used.
 
 ## Filesystem safety
 
@@ -84,6 +95,9 @@ Sync link targets are replaced only when they are symlinks. A regular target cau
 the sole opt-in exception is user `CLAUDE.md`, which `--force` copies to `CLAUDE.md.bak` before
 linking. Manifest pruning removes only managed links that still point inside cwtch's source
 directory. cwtch does not recursively delete link targets.
+
+Removing every declaration still prunes previously managed links. `sync --dry-run` lists those
+removals without changing the links or manifest.
 
 Git refs are validated, and Git commands place `--` before untrusted refs and URLs.
 
