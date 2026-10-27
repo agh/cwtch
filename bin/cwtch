@@ -68,6 +68,7 @@ usage_help() {
   printf '\n%b\n' "${C_BOLD}COMMANDS${C_RESET}"
   help_row "status" "Show the active profile and sync state"
   help_row "usage" "Show usage for OAuth profiles"
+  help_row "run <name> [-- cmd...]" "Launch a command with a token or API-key profile"
   printf '\n'
   help_row "sync" "Pull sources and build ~/.claude/"
   help_row "sync --dry-run" "Show the plan without changing files"
@@ -78,12 +79,13 @@ usage_help() {
   help_row "profile list" "List saved profiles"
   help_row "profile current" "Print the active profile's name"
   help_row "profile setup <name>" "Create and save a long-lived token (easiest)"
-  help_row "profile save-token <name>" "Save an existing long-lived token"
+  help_row "profile save-token <name> [--expires YYYY-MM-DD]" "Save an existing long-lived token"
+  help_row "profile expires <name> <date>" "Set a token profile's explicit expiry"
   help_row "profile save-key <name>" "Save an API key profile"
   help_row "profile save <name>" "Save the Keychain OAuth login as a profile"
   help_row "profile use <name>" "Switch to a profile"
   help_row "profile delete <name>" "Delete a profile"
-  help_row "profile env" "Print shell exports for the active profile"
+  help_row "profile env [name]" "Print shell exports for a named or active profile"
   help_row "profile token" "Print the active profile's token"
   help_row "profile api-key" "Print the active profile's API key"
   printf '\n'
@@ -167,7 +169,14 @@ cmd_profile() {
         err "Missing name"
         exit 1
       }
-      cmd_save_token "$1"
+      cmd_save_token "$@"
+      ;;
+    expires)
+      [[ $# -eq 2 ]] || {
+        err "Usage: cwtch profile expires <name> <YYYY-MM-DD>"
+        return 1
+      }
+      profile_expires "$1" "$2"
       ;;
     use)
       [[ $# -lt 1 ]] && {
@@ -185,7 +194,7 @@ cmd_profile() {
       ;;
     api-key) cmd_apikey ;;
     token) cmd_token ;;
-    env) cmd_env ;;
+    env) cmd_env "$@" ;;
     *)
       err "Unknown profile command: ${sub}"
       exit 1
@@ -216,14 +225,23 @@ cmd_save_key() {
 }
 
 cmd_save_token() {
-  local name="$1" token
+  local name="$1" token expires=""
+  shift
   validate_name "${name}" || exit 1
+  if [[ $# -gt 0 ]]; then
+    if [[ $# -ne 2 ]] || [[ "$1" != "--expires" ]]; then
+      err "Usage: cwtch profile save-token <name> [--expires YYYY-MM-DD]"
+      return 1
+    fi
+    expires="$2"
+    validate_expiry_date "${expires}" || return 1
+  fi
   token="$(read_secret "Token: ")"
   [[ -z "${token}" ]] && {
     err "No token provided"
     exit 1
   }
-  profile_save_token "${name}" "${token}"
+  profile_save_token "${name}" "${token}" import "${expires}"
 }
 
 CWTCH_TMPFILE=""
@@ -292,7 +310,7 @@ cmd_setup() {
     err "Token candidate is longer than 256 characters; not saved"
     return 1
   }
-  profile_save_token "${name}" "${token}" || return 1
+  profile_save_token "${name}" "${token}" setup || return 1
   # Setup tokens are 108 characters today; another length suggests a wrap was misread.
   [[ ${#token} -eq ${SETUP_TOKEN_LEN} ]] ||
     warn "Saved token is ${#token} characters, not the usual ${SETUP_TOKEN_LEN}; if Claude Code rejects it, run 'cwtch profile save-token ${name}' and paste it"
@@ -326,46 +344,113 @@ env_precedence_warnings() {
   return 0
 }
 
-cmd_env() {
-  local name type value
-  name="$(current_profile)" || {
-    err "No profile active"
-    exit 1
-  }
-  type="$(profile_type "${name}")"
+activation_profile() {
+  local name
+  if [[ $# -gt 0 ]]; then
+    name="$1"
+    require_profile "${name}" || return 1
+    if [[ "$(profile_type "${name}")" == "oauth" ]]; then
+      err "The Keychain login is global; use 'cwtch profile use ${name}' instead"
+      return 1
+    fi
+  else
+    name="$(current_profile)" || {
+      err "No profile active"
+      return 1
+    }
+  fi
+  printf '%s\n' "${name}"
+}
+
+activation_value() {
+  local name="$1" type="$2" value
   case "${type}" in
     token)
-      value="$(cat "${PROFILES_DIR}/${name}/.token")"
+      value="$(cat "${PROFILES_DIR}/${name}/.token")" || return 1
       [[ "${value}" =~ ${TOKEN_RE} ]] || {
-        err "Stored token for '${name}' has an unexpected format; refusing to print"
-        exit 1
+        err "Stored token for '${name}' has an unexpected format; refusing to activate"
+        return 1
       }
-      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
-      printf "export CLAUDE_CODE_OAUTH_TOKEN='%s'\n" "${value}"
       ;;
     api-key)
-      value="$(cat "${PROFILES_DIR}/${name}/.apikey")"
+      value="$(cat "${PROFILES_DIR}/${name}/.apikey")" || return 1
       [[ "${value}" =~ ${APIKEY_RE} ]] || {
-        err "Stored API key for '${name}' has an unexpected format; refusing to print"
-        exit 1
+        err "Stored API key for '${name}' has an unexpected format; refusing to activate"
+        return 1
       }
-      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
-      printf "export ANTHROPIC_API_KEY='%s'\n" "${value}"
       ;;
-    oauth)
-      printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
-      info "OAuth profile '${name}': Claude Code uses the Keychain login" >&2
-      ;;
+    oauth) return 0 ;;
     'mixed!')
       err "Profile '${name}' holds more than one credential; save it again to fix it"
-      exit 1
+      return 1
       ;;
     *)
       err "No credential for '${name}'"
-      exit 1
+      return 1
       ;;
   esac
+  printf '%s\n' "${value}"
+}
+
+cmd_env() {
+  local name type value
+  [[ $# -le 1 ]] || {
+    err "Usage: cwtch profile env [name]"
+    return 1
+  }
+  name="$(activation_profile "$@")" || return 1
+  type="$(profile_type "${name}")"
+  value="$(activation_value "${name}" "${type}")" || return 1
+  # Assert NAME_RE again at the shell-quoting boundary.
+  validate_name "${name}" || return 1
+  printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE"
+  case "${type}" in
+    token)
+      printf "export CLAUDE_CODE_OAUTH_TOKEN='%s'\n" "${value}"
+      warn_token_expiry "${name}"
+      ;;
+    api-key)
+      printf "export ANTHROPIC_API_KEY='%s'\n" "${value}"
+      ;;
+    oauth)
+      info "OAuth profile '${name}': Claude Code uses the Keychain login" >&2
+      ;;
+    *)
+      err "Unsupported profile type '${type}'"
+      return 1
+      ;;
+  esac
+  printf "export CWTCH_PROFILE='%s'\n" "${name}"
   env_precedence_warnings
+}
+
+cmd_run() {
+  local name type value
+  [[ $# -gt 0 ]] || {
+    err "Usage: cwtch run <name> [--] [command [args...]]"
+    return 1
+  }
+  name="$(activation_profile "$1")" || return 1
+  shift
+  [[ "${1:-}" != "--" ]] || shift
+  [[ $# -gt 0 ]] || set -- claude
+  type="$(profile_type "${name}")"
+  value="$(activation_value "${name}" "${type}")" || return 1
+  unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE
+  case "${type}" in
+    token)
+      export CLAUDE_CODE_OAUTH_TOKEN="${value}"
+      warn_token_expiry "${name}"
+      ;;
+    api-key) export ANTHROPIC_API_KEY="${value}" ;;
+    *)
+      err "The Keychain login is global; use 'cwtch profile use ${name}' instead"
+      return 1
+      ;;
+  esac
+  export CWTCH_PROFILE="${name}"
+  env_precedence_warnings
+  exec -- "$@"
 }
 
 cmd_refresh() {
@@ -471,7 +556,10 @@ status_profile() {
   type="$(profile_type "${name}")"
   printf '%b%s%b\n' "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}" "${name}" "${C_RESET} ${C_DIM}(${type})${C_RESET}"
   case "${type}" in
-    token | api-key) printf '    Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}" ;;
+    token | api-key)
+      [[ "${type}" != "token" ]] || printf '    %s\n' "$(token_expiry_label "${name}")"
+      printf '    Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
+      ;;
     oauth) dim "    Claude Code uses the Keychain login" ;;
     'mixed!') dim "    More than one credential saved; save the profile again to fix it" ;;
     *) dim "    No credential saved" ;;
@@ -522,6 +610,7 @@ main() {
   case "${cmd}" in
     status) cmd_status ;;
     usage) cmd_usage ;;
+    run) cmd_run "$@" ;;
     refresh) cmd_refresh "$@" ;;
     sync) cmd_sync "$@" ;;
     profile) cmd_profile "$@" ;;

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `cwtch profile env <name>` to activate a token or API-key profile in one shell without changing
+  the global selection
+- `CWTCH_PROFILE` as a launch label for shell prompts and Claude Code statuslines, not proof of
+  effective authentication
+- `cwtch run <name> [--] [command [args...]]` to launch a command with a named token or API-key
+  profile, defaulting to `claude`, without putting credentials in argument lists
+- Mode-`600` profile metadata with creation time, source, and optional token expiry; setup-token
+  expiry is estimated at 365 days, while imported tokens remain unknown unless specified; a
+  failed metadata write warns without blocking the save
+- `profile save-token <name> --expires YYYY-MM-DD` and `profile expires <name> <YYYY-MM-DD>` for
+  explicit token expiry dates
+- Token expiry in `profile list` and `status`, plus advisory warnings on activation within 30 days
+  of expiry or after expiry
+- Checked per-shell activation, launch-label examples, and an opt-in direnv recipe
+
 ### Fixed
 
 - Reassemble indented, wrapped setup tokens without saving a valid-looking fragment or appending

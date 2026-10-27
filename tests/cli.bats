@@ -52,11 +52,20 @@ teardown() { teardown_test_env; }
 
 @test "profile subcommands that need a name report the missing name" {
   local sub
-  for sub in save save-key save-token setup use delete; do
+  for sub in save save-key save-token setup use delete expires; do
     run --separate-stderr cwtch profile "${sub}"
     assert_status 1
     [[ -n "${stderr}" ]]
   done
+}
+
+@test "help advertises named activation, child launches, and token expiry" {
+  run cwtch --help
+  assert_status 0
+  assert_output_contains "profile env [name]"
+  assert_output_contains "run <name> [-- cmd...]"
+  assert_output_contains "profile expires <name> <date>"
+  assert_output_contains "profile save-token <name> [--expires YYYY-MM-DD]"
 }
 
 @test "edit opens the Cwtchfile with EDITOR" {

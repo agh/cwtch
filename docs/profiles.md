@@ -66,6 +66,56 @@ cwtch profile use work
 cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
+For independent shells, use `profile env work` instead of `profile use work`; see
+[Applying a profile to the shell](#applying-a-profile-to-the-shell).
+
+## Token expiry metadata
+
+Every successful save writes a non-secret `meta.json` beside the credential, at mode `600`:
+
+```json
+{
+  "type": "token",
+  "created": "2026-10-27T12:00:00Z",
+  "source": "setup",
+  "expires": "2027-10-27",
+  "expires_basis": "estimated"
+}
+```
+
+`created` is the UTC time cwtch saved the profile. `profile setup` records source `setup` and
+estimates expiry at creation plus 365 days because setup tokens are one-year credentials. This
+is an estimate, not a server-provided expiry. `save-token`, `save-key`, and OAuth `save` record
+source `import`; imported tokens have unknown expiry unless specified, and API-key and OAuth
+metadata always have null `expires` and `expires_basis`.
+
+Supply a known token expiry when importing, or set it later without re-entering the token:
+
+```bash
+cwtch profile save-token work --expires 2027-07-12
+cwtch profile expires work 2027-07-12
+```
+
+Both commands require a real calendar date in `YYYY-MM-DD` form. `profile expires` works only
+on an existing token profile and preserves its token, creation time, source, and global selection.
+For a profile saved before 6.1, which has no metadata, it records `created` as `null`: cwtch does
+not know when that token was issued and does not guess from file times.
+
+Metadata is advisory. If `meta.json` cannot be written, the credential is still saved and cwtch
+warns that the expiry will show as unknown.
+
+`profile list` and `status` show `expires 2027-07-12`,
+`expires ~2027-07-12 (estimated)`, or `expiry unknown` for token profiles. Existing profiles
+without metadata remain unknown; cwtch never infers expiry from file modification times.
+`profile env`, `profile use`, and `run` warn on standard error when a token expires within 30
+UTC calendar days, including today, or has already expired. Warnings include
+`cwtch profile setup <name>` as the remedy and never block activation.
+
+Re-saving a profile replaces its metadata, including creation time and expiry. Setting an explicit
+expiry preserves existing provenance and changes `expires_basis` to `explicit`. Deleting a profile
+removes its metadata and backups with it. Invalid metadata produces an `expiry unknown` warning
+on activation or display; re-save the token before changing malformed metadata.
+
 ## OAuth snapshot profiles
 
 Authenticate Claude Code, then save the current Keychain credential:
@@ -154,35 +204,51 @@ This leaves errors visible and preserves the failing exit status. A bare
 retain that compact form for
 readability; use the checked recipe in scripts and shell configuration.
 
-For bash or zsh, a small function can select and apply a profile together:
+To select a token or API-key profile for just this shell, name it explicitly:
+
+```bash
+cwtch_env="$(cwtch profile env work)" && eval "${cwtch_env}"
+```
+
+Named activation validates the profile without reading or changing `.current` or
+`.keychain-owner`. Omitting the name retains the current-profile behaviour. Named OAuth
+activation is refused because the Keychain login is global: use `cwtch profile use <name>`,
+then apply the unnamed `profile env` output to clear shell credentials.
+
+For bash or zsh, add this checked per-shell helper to your shell configuration:
 
 ```bash
 cwtch_use() {
   local cwtch_env
-  cwtch profile use "$1" || return
-  cwtch_env="$(cwtch profile env)" || return
+  cwtch_env="$(cwtch profile env "$1")" || return
   eval "${cwtch_env}"
 }
+
+cwtch_use work
 ```
 
-For a token profile, `cwtch profile env` writes:
+This helper does not change the default that another shell will activate.
+For a token profile named `work`, `cwtch profile env work` writes:
 
 ```sh
-unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE
 export CLAUDE_CODE_OAUTH_TOKEN='<token>'
+export CWTCH_PROFILE='work'
 ```
 
-For an API-key profile:
+For an API-key profile named `ci-bot`:
 
 ```sh
-unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE
 export ANTHROPIC_API_KEY='<key>'
+export CWTCH_PROFILE='ci-bot'
 ```
 
-For an OAuth snapshot:
+For a current OAuth snapshot named `personal`:
 
 ```sh
-unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE
+export CWTCH_PROFILE='personal'
 ```
 
 The credential is validated again before it is printed. If `ANTHROPIC_AUTH_TOKEN`,
@@ -197,6 +263,66 @@ being used.
 
 `profile token` and `profile api-key` print the active raw credential. They fail if the selected
 profile has the wrong type.
+
+### Launch labels in prompts and statuslines
+
+Every successful `profile env` exports `CWTCH_PROFILE`. It is an inherited launch label for
+prompts and statuslines, not proof of effective authentication: higher-precedence configuration
+can override the credential, and a later global selection or Keychain switch does not update
+already-running environments.
+
+For a zsh prompt:
+
+```zsh
+setopt PROMPT_SUBST
+PROMPT='[${CWTCH_PROFILE:-}] %~ %# '
+```
+
+For a Claude Code statusline, merge this setting into `settings.json`. Statusline commands receive
+JSON on standard input; this minimal command ignores it and prints only the inherited label:
+
+```json
+{
+  "statusLine": {
+    "type": "command",
+    "command": "printf '%s\\n' \"${CWTCH_PROFILE:-}\""
+  }
+}
+```
+
+### Opt-in direnv activation
+
+After saving a `work` token or API-key profile, an opt-in project `.envrc` can contain:
+
+```bash
+eval "$(cwtch profile env work)"
+```
+
+Review the file before running `direnv allow`: that approval is the trust boundary for executing
+`.envrc`. The file must name the profile and never contain a token. The compact recipe does not
+preserve a failing `profile env` exit status; use the checked capture-then-eval form above when
+activation must report failure.
+
+## Launching a command with a profile
+
+`cwtch run` builds the child environment directly, without evaluating shell output or changing
+`.current` or `.keychain-owner`:
+
+```bash
+cwtch run work
+cwtch run work -- claude --resume
+cwtch run ci-bot sh -c 'printf "%s\n" "${CWTCH_PROFILE}"'
+```
+
+The default command is `claude`. A single leading `--` is optional; remaining command arguments
+retain their boundaries, including spaces, empty strings, and quoted globs. cwtch clears both
+credential variables, exports only the selected token or API key plus `CWTCH_PROFILE`, and
+replaces itself with the command using `exec`. Credentials are never placed in the command's
+argument list. Exit status and signals propagate directly; a missing command exits `127`.
+Precedence and expiry warnings go to standard error before the command starts.
+
+Only token and API-key profiles support `run`. OAuth profiles are refused because Keychain
+activation is global; use `cwtch profile use <name>` instead.
 
 ## Listing, selecting, and deleting
 
@@ -214,9 +340,10 @@ resolved path outside the named profile directory.
 
 ## Status and usage
 
-`cwtch status` is offline. It shows the cwtch version, active profile and type, the shell activation
-hint for token and API-key profiles, configured source revisions or `not synced`, and the
-Cwtchfile path. It does not fetch usage.
+`cwtch status` is offline. It shows the cwtch version, globally selected profile and type, token
+expiry, the shell activation hint for token and API-key profiles, configured source revisions or
+`not synced`, and the Cwtchfile path. It does not fetch usage or identify a running shell's
+effective authentication; use `CWTCH_PROFILE` only as a launch label.
 
 `cwtch usage` is best effort and always continues through individual failures:
 
@@ -249,17 +376,23 @@ successfully.
 ├── .keychain-owner
 └── profiles/
     ├── personal/
-    │   └── .token
+    │   ├── .token
+    │   └── meta.json
     ├── work/
-    │   └── .credential
+    │   ├── .credential
+    │   └── meta.json
     └── ci-bot/
-        └── .apikey
+        ├── .apikey
+        └── meta.json
 ```
 
 Credential files are created with mode `600`. Replacing a credential with different content first
 copies the old value to the same path plus `.bak`, also mode `600`; only one backup is retained.
 These files and their backups contain plaintext secrets readable by the owning user.
+`meta.json` contains no credential and uses the same atomic mode-`600` write and single-backup
+pattern. It does not count as a credential when determining the profile type.
 
 Commands return `0` on success and `1` for user errors such as an invalid name, missing profile, or
-wrong credential type. See [Security model](security.md) before backing up or synchronising
+wrong credential type. `run` instead propagates the launched command's status, including `127`
+when the command cannot be found. See [Security model](security.md) before backing up or synchronising
 `~/.cwtch/`.

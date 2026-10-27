@@ -130,6 +130,10 @@ keychain_owner() {
 write_secret() {
   local path="$1" content="$2"
   mkdir -p "$(dirname "${path}")" || return 1
+  if [[ -d "${path}" ]]; then
+    err "Could not write ${path}: is a directory"
+    return 1
+  fi
   if [[ -f "${path}" ]] && [[ "$(cat "${path}")" != "${content}" ]]; then
     (
       umask 077
@@ -163,6 +167,165 @@ profile_type() {
   fi
   [[ ${count} -gt 1 ]] && type="mixed!"
   printf '%s\n' "${type}"
+}
+
+require_profile() {
+  local name="$1"
+  validate_name "${name}" || return 1
+  [[ -d "${PROFILES_DIR}/${name}" ]] || {
+    err "Profile '${name}' not found"
+    return 1
+  }
+}
+
+validate_expiry_date() {
+  local value="$1" parsed=""
+  if [[ "${value}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    parsed="$(date -u -j -f '%Y-%m-%d' "${value}" '+%Y-%m-%d' 2>/dev/null)" ||
+      parsed="$(date -u -d "${value}" '+%Y-%m-%d' 2>/dev/null)" || parsed=""
+  fi
+  if [[ -z "${parsed}" ]] || [[ "${parsed}" != "${value}" ]]; then
+    err "Invalid expiry date '${value}'; use a real calendar date in YYYY-MM-DD format"
+    return 1
+  fi
+}
+
+date_after_days() {
+  local day="$1" days="$2" result
+  result="$(date -u -j -v+"${days}"d -f '%Y-%m-%d' "${day}" '+%Y-%m-%d' 2>/dev/null)" ||
+    result="$(date -u -d "${day} +${days} days" '+%Y-%m-%d' 2>/dev/null)" || {
+    err "Could not calculate a UTC expiry date"
+    return 1
+  }
+  printf '%s\n' "${result}"
+}
+
+write_profile_metadata() {
+  local name="$1" type="$2" source="$3" expires="${4:-}" basis="${5:-}"
+  local created metadata
+  created="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" || {
+    err "Could not read the UTC creation time for '${name}'"
+    return 1
+  }
+  if [[ "${source}" == "setup" ]]; then
+    expires="$(date_after_days "${created%%T*}" 365)" || return 1
+    basis="estimated"
+  fi
+  metadata="$(jq -n --arg type "${type}" --arg created "${created}" \
+    --arg source "${source}" --arg expires "${expires}" --arg basis "${basis}" \
+    '{type: $type, created: $created, source: $source,
+      expires: (if $expires == "" then null else $expires end),
+      expires_basis: (if $basis == "" then null else $basis end)}')" || {
+    err "Could not build metadata for '${name}'"
+    return 1
+  }
+  write_secret "${PROFILES_DIR}/${name}/meta.json" "${metadata}" || {
+    err "Could not write metadata for '${name}'"
+    return 1
+  }
+}
+
+# Metadata is advisory: a failure must not leave a half-saved credential, so it
+# only warns once the credential itself is safely written.
+save_profile_metadata() {
+  write_profile_metadata "$@" 2>/dev/null ||
+    warn "Could not write metadata for '$1'; its expiry will show as unknown"
+  return 0
+}
+
+read_token_metadata() {
+  jq -se '
+    if length == 1 and (.[0] | type == "object" and .type == "token" and
+      (.created == null or
+        (.created | type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"))) and
+      (.source == "setup" or .source == "import") and
+      ((.expires == null and .expires_basis == null) or
+        ((.expires | type == "string") and
+          (.expires_basis == "estimated" or .expires_basis == "explicit"))))
+    then .[0] else error("invalid token metadata") end
+  ' "${PROFILES_DIR}/$1/meta.json" 2>/dev/null
+}
+
+# Missing metadata is normal for profiles saved before 6.1.
+token_expiry() {
+  local name="$1" path="${PROFILES_DIR}/$1/meta.json" metadata expires basis
+  [[ -e "${path}" ]] || [[ -L "${path}" ]] || return 0
+  # Only a regular file is read: a FIFO or device here would block jq.
+  if [[ ! -f "${path}" ]] || ! metadata="$(read_token_metadata "${name}")"; then
+    warn "Invalid metadata for '${name}'; expiry unknown"
+    return 0
+  fi
+  expires="$(printf '%s' "${metadata}" | jq -r '.expires // empty')"
+  [[ -n "${expires}" ]] || return 0
+  if ! validate_expiry_date "${expires}" 2>/dev/null; then
+    warn "Invalid metadata for '${name}'; expiry unknown"
+    return 0
+  fi
+  basis="$(printf '%s' "${metadata}" | jq -r '.expires_basis')"
+  printf '%s %s\n' "${expires}" "${basis}"
+}
+
+token_expiry_label() {
+  local expiry
+  expiry="$(token_expiry "$1")"
+  if [[ -z "${expiry}" ]]; then
+    printf '%s\n' "expiry unknown"
+  elif [[ "${expiry#* }" == "estimated" ]]; then
+    printf 'expires ~%s (estimated)\n' "${expiry% *}"
+  else
+    printf 'expires %s\n' "${expiry% *}"
+  fi
+}
+
+warn_token_expiry() {
+  local name="$1" expiry expires today threshold estimated=""
+  expiry="$(token_expiry "${name}")"
+  [[ -n "${expiry}" ]] || return 0
+  expires="${expiry% *}"
+  [[ "${expiry#* }" == "estimated" ]] && estimated=" (estimated)"
+  if ! today="$(date -u '+%Y-%m-%d')" ||
+    ! threshold="$(date_after_days "${today}" 30)"; then
+    warn "Could not check token expiry for '${name}'"
+    return 0
+  fi
+  if [[ "${expires}" < "${today}" ]]; then
+    warn "Token for '${name}' expired on ${expires}${estimated}; run 'cwtch profile setup ${name}'"
+  elif [[ "${expires}" < "${threshold}" ]] || [[ "${expires}" == "${threshold}" ]]; then
+    warn "Token for '${name}' expires on ${expires}${estimated} (within 30 days); run 'cwtch profile setup ${name}'"
+  fi
+  return 0
+}
+
+profile_expires() {
+  local name="$1" expires="$2" metadata
+  require_profile "${name}" || return 1
+  [[ "$(profile_type "${name}")" == "token" ]] || {
+    err "Profile '${name}' is not a token profile"
+    return 1
+  }
+  validate_expiry_date "${expires}" || return 1
+  if [[ -e "${PROFILES_DIR}/${name}/meta.json" ]] || [[ -L "${PROFILES_DIR}/${name}/meta.json" ]]; then
+    metadata="$(read_token_metadata "${name}")" || {
+      err "Invalid metadata for '${name}'; save the token again before setting its expiry"
+      return 1
+    }
+    metadata="$(printf '%s' "${metadata}" | jq --arg expires "${expires}" \
+      '.expires = $expires | .expires_basis = "explicit"')" || return 1
+    write_secret "${PROFILES_DIR}/${name}/meta.json" "${metadata}" || {
+      err "Could not write metadata for '${name}'"
+      return 1
+    }
+  else
+    # Saved before 6.1: when the token was issued is unknown, so record no date.
+    metadata="$(jq -n --arg expires "${expires}" \
+      '{type: "token", created: null, source: "import",
+        expires: $expires, expires_basis: "explicit"}')" || return 1
+    write_secret "${PROFILES_DIR}/${name}/meta.json" "${metadata}" || {
+      err "Could not write metadata for '${name}'"
+      return 1
+    }
+  fi
+  log "Set expiry for '${name}' to ${expires}"
 }
 
 get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -w 2>/dev/null || true; }
@@ -221,7 +384,7 @@ fetch_usage() {
 
 profile_list() {
   mkdir -p "${PROFILES_DIR}"
-  local current found=0 dir name type
+  local current found=0 dir name type expiry
   current="$(current_profile)" || current=""
   for dir in "${PROFILES_DIR}"/*/; do
     [[ -d "${dir}" ]] || continue
@@ -229,11 +392,13 @@ profile_list() {
     name="${dir%/}"
     name="${name##*/}"
     type="$(profile_type "${name}")"
+    expiry=""
+    [[ "${type}" != "token" ]] || expiry=" $(token_expiry_label "${name}")"
     if [[ "${name}" == "${current}" ]]; then
-      printf '%b%s%b\n' "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}" "${name}" \
-        "${C_RESET} ${C_DIM}(${type})${C_RESET} ${C_GREEN}active${C_RESET}"
+      printf '%b%s%b%s\n' "  ${C_GREEN}${SYM_STAR}${C_RESET} ${C_BOLD}" "${name}" \
+        "${C_RESET} ${C_DIM}(${type})${C_RESET} ${C_GREEN}active${C_RESET}" "${expiry}"
     else
-      printf '    %s%b\n' "${name}" " ${C_DIM}(${type})${C_RESET}"
+      printf '    %s%b%s\n' "${name}" " ${C_DIM}(${type})${C_RESET}" "${expiry}"
     fi
   done
   [[ ${found} -eq 0 ]] && dim "  No profiles saved."
@@ -268,6 +433,7 @@ profile_save() {
     err "Could not write credential for '${name}'"
     return 1
   }
+  save_profile_metadata "${name}" oauth import
   prune_other_creds "${name}" .credential
   set_keychain_owner "${name}" || return 1
   set_current "${name}" || return 1
@@ -286,14 +452,19 @@ profile_save_key() {
     err "Could not write API key for '${name}'"
     return 1
   }
+  save_profile_metadata "${name}" api-key import
   prune_other_creds "${name}" .apikey
   set_current "${name}" || return 1
   log "Saved '${name}' (api-key)"
 }
 
 profile_save_token() {
-  local name="$1" token="$2" target
+  local name="$1" token="$2" source="${3:-import}" expires="${4:-}" basis="" target
   validate_name "${name}" || return 1
+  if [[ -n "${expires}" ]]; then
+    validate_expiry_date "${expires}" || return 1
+    basis="explicit"
+  fi
   [[ "${token}" =~ ${TOKEN_RE} ]] || {
     err "Credential has an unexpected format; not saved"
     return 1
@@ -303,6 +474,7 @@ profile_save_token() {
     err "Could not write token for '${name}'"
     return 1
   }
+  save_profile_metadata "${name}" token "${source}" "${expires}" "${basis}"
   prune_other_creds "${name}" .token
   set_current "${name}" || return 1
   log "Saved '${name}' (token)"
@@ -371,14 +543,11 @@ profile_use_oauth() {
 
 profile_use() {
   local name="$1" type
-  validate_name "${name}" || return 1
-  [[ -d "${PROFILES_DIR}/${name}" ]] || {
-    err "Profile '${name}' not found"
-    return 1
-  }
+  require_profile "${name}" || return 1
   type="$(profile_type "${name}")"
   case "${type}" in
     token | api-key)
+      [[ "${type}" != "token" ]] || warn_token_expiry "${name}"
       set_current "${name}" || return 1
       log "Switched to '${name}' (${type})"
       printf '  Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
