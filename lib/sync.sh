@@ -205,8 +205,22 @@ sync_drop_legacy() {
   cwtch_note "    removed legacy link ${legacy}"
 }
 
+# A backup path that is neither absent, a regular file, nor a symlink (which
+# is removed first) cannot hold a backup; dry runs and applies both refuse it.
+sync_backup_ok() {
+  local backup="$1.bak"
+  if { [[ -e "${backup}" ]] || [[ -L "${backup}" ]]; } && [[ ! -L "${backup}" ]] && [[ ! -f "${backup}" ]]; then
+    err "${backup} exists and is not a regular file; move it so cwtch can back up $1"
+    return 1
+  fi
+}
+
 sync_write_json() {
   local target="$1" content="$2" tmp mode=600
+  if [[ -L "${target}" ]]; then
+    err "${target} is a symlink; cwtch will not replace it"
+    return 1
+  fi
   mkdir -p "$(dirname "${target}")" || return 1
   # Both JSON outputs can contain secrets: preserve existing modes, default to 600.
   if [[ -e "${target}" ]]; then
@@ -239,6 +253,10 @@ sync_backup_json() {
 # Base settings supply defaults; whatever is already in settings.json wins.
 sync_settings() {
   local base="$1" target="${CLAUDE_DIR}/settings.json" merged existing
+  if [[ -L "${target}" ]]; then
+    err "${target} is a symlink; cwtch will not replace it"
+    return 1
+  fi
   if ! jq . "${base}" >/dev/null 2>&1; then
     err "Settings file is not valid JSON: ${base}"
     return 1
@@ -251,6 +269,7 @@ sync_settings() {
     merged="$(jq -s '.[0] * .[1]' "${base}" "${target}")" || return 1
     existing="$(cat "${target}")"
     [[ "${merged}" == "${existing}" ]] && return 0
+    sync_backup_ok "${target}" || return 1
     if [[ "${SYNC_DRY_RUN}" == true ]]; then
       cwtch_note "    would merge settings into ${target} (backup ${target}.bak)"
       return 0
@@ -269,6 +288,10 @@ sync_settings() {
 # User-scope MCP servers live in ~/.claude.json, never in settings.json.
 sync_mcp() {
   local file="$1" target="${CLAUDE_JSON}" servers merged existing
+  if [[ -L "${target}" ]]; then
+    err "${target} is a symlink; cwtch will not replace it"
+    return 1
+  fi
   servers="$(jq -c 'if type == "object" and has("mcpServers") then .mcpServers else . end' "${file}" 2>/dev/null)" ||
     {
       err "MCP file is not valid JSON: ${file}"
@@ -283,9 +306,10 @@ sync_mcp() {
       err "${target} is not valid JSON; refusing to merge MCP servers"
       return 1
     fi
-    merged="$(jq --argjson new "${servers}" '.mcpServers = ((.mcpServers // {}) * $new)' "${target}")" || return 1
+    merged="$(jq --argjson new "${servers}" '.mcpServers = ((.mcpServers // {}) + $new)' "${target}")" || return 1
     existing="$(cat "${target}")"
     [[ "${merged}" == "${existing}" ]] && return 0
+    sync_backup_ok "${target}" || return 1
     if [[ "${SYNC_DRY_RUN}" == true ]]; then
       cwtch_note "    would merge MCP servers into ${target} (backup ${target}.bak)"
       return 0
@@ -308,10 +332,14 @@ sync_claude_md() {
       err "CLAUDE.md exists and is not a symlink; move it or run 'cwtch sync --force'"
       return 1
     fi
+    sync_backup_ok "${target}" || return 1
     if [[ "${SYNC_DRY_RUN}" == true ]]; then
       cwtch_note "    would replace ${target} with a symlink (backup ${target}.bak)"
       sync_record "${target}"
       return 0
+    fi
+    if [[ -L "${target}.bak" ]]; then
+      rm -f "${target}.bak" || return 1
     fi
     cp "${target}" "${target}.bak" && rm -f "${target}" || return 1
   fi
@@ -508,6 +536,9 @@ do_sync() {
   if [[ -z "${settings_ref}" ]] && [[ -z "${claude_md_ref}" ]] &&
     [[ "${count}" -eq 0 ]] && [[ ! -s "${LINKS_MANIFEST}" ]]; then
     info "Nothing to sync (edit $(sync_tilde "${CWTCHFILE}" || true))"
+    if [[ "${SYNC_DRY_RUN}" == true ]]; then
+      info "Dry run: nothing was changed"
+    fi
     return 0
   fi
 

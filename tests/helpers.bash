@@ -93,7 +93,8 @@ setup_test_env() {
   : >"${SECURITY_CALLS}"
   : >"${CLAUDE_CALLS}"
   : >"${CURL_CALLS}"
-  unset MOCK_SECURITY_ADD_FAIL MOCK_CLAUDE_MODE
+  unset MOCK_SECURITY_ADD_FAIL MOCK_CLAUDE_MODE MOCK_CLAUDE_TOKEN
+  unset EXPECT_KEYCHAIN_SVC EXPECT_KEYCHAIN_ACCT MOCK_OTHER_KEYCHAIN_ACCT
   unset MOCK_CURL_USAGE_BODY MOCK_CURL_RELEASE_HEADERS
   export MOCK_CURL_USAGE_EXIT=22
   export MOCK_CURL_RELEASE_EXIT=6
@@ -140,6 +141,31 @@ write_mock_security() {
   cat >"$1" <<'MOCK'
 #!/bin/bash
 set -uo pipefail
+printf 'argv=%s\n' "$*" >> "${SECURITY_CALLS}"
+if [[ "${1:-}" == "-i" ]]; then
+  [[ $# -eq 1 ]] || exit 2
+  IFS= read -r command || exit 2
+  # Real 'security -i' cannot take a longer line intact; cwtch must use argv instead.
+  if [[ ${#command} -gt 4032 ]]; then
+    printf '%s\n' "security: interactive command longer than 4032 characters" >&2
+    exit 2
+  fi
+  pattern='^add-generic-password -U -s "((\\.|[^"\\])*)" -a "((\\.|[^"\\])*)" -X "([0-9a-f]+)"$'
+  if ! [[ "${command}" =~ ${pattern} ]]; then
+    printf '%s\n' "security: unexpected interactive command" >&2
+    exit 2
+  fi
+  svc="${BASH_REMATCH[1]}"
+  acct="${BASH_REMATCH[3]}"
+  hex="${BASH_REMATCH[5]}"
+  svc="${svc//\\\"/\"}"
+  svc="${svc//\\\\/\\}"
+  acct="${acct//\\\"/\"}"
+  acct="${acct//\\\\/\\}"
+  secret="$(printf '%b' "$(printf '%s' "${hex}" | sed 's/../\\x&/g')")"
+  set -- add-generic-password -U -s "${svc}" -a "${acct}" -w "${secret}"
+  printf '%s\n' "stdin=add-generic-password" >> "${SECURITY_CALLS}"
+fi
 sub="${1:-}"
 shift || true
 
@@ -155,6 +181,10 @@ while [[ $# -gt 0 ]]; do
       else
         want_w=1; shift
       fi
+      ;;
+    -X)
+      secret="$(printf '%b' "$(printf '%s' "${2:-}" | sed 's/../\\x&/g')")"
+      have_secret=1; shift 2
       ;;
     *) shift ;;
   esac
@@ -173,12 +203,23 @@ fi
 
 case "${sub}" in
   find-generic-password)
+    if [[ -z "${acct}" ]]; then
+      echo "security: mock requires -a on find-generic-password" >&2
+      exit 2
+    fi
     if [[ ${want_w} -ne 1 ]]; then
       echo "security: mock expects -w on find-generic-password" >&2
       exit 2
     fi
-    if [[ -f "${MOCK_KEYCHAIN}" ]]; then
-      cat "${MOCK_KEYCHAIN}"
+    item="${MOCK_KEYCHAIN}"
+    if [[ "${acct}" == "${MOCK_OTHER_KEYCHAIN_ACCT:-other-account}" ]]; then
+      item="${MOCK_KEYCHAIN}.other-account"
+    elif [[ "${acct}" != "${expect_acct}" ]]; then
+      printf "security: unexpected account '%s'\n" "${acct}" >&2
+      exit 2
+    fi
+    if [[ -f "${item}" ]]; then
+      cat "${item}"
     else
       echo "security: SecKeychainSearchCopyNext: The specified item could not be found in the keychain." >&2
       exit 44
@@ -234,21 +275,36 @@ case "${MOCK_CLAUDE_MODE:-token}" in
   token)
     printf 'Create a long-lived authentication token.\n\n'
     printf '\033[1mYour token:\033[0m\n'
-    printf '\033[32m%s\033[0m\n' "${MOCK_CLAUDE_TOKEN:-sk-ant-oat01-aaaabbbbccccddddeeeeffffgggghhhh}"
-    printf '\nStore it somewhere safe.\n'
+    printf '\033[32m%s\033[0m\r\n' "${MOCK_CLAUDE_TOKEN:-${TEST_TOKEN_A}}"
+    printf '\nStore this token somewhere safe.\n'
     ;;
   token-wrapped)
-    # The real CLI colours and hard-wraps, so the token can straddle two lines.
     printf '\033[1mYour token:\033[0m\n'
-    printf '\033[32msk-ant-oat01-aaaabbbbcccc \n'
-    printf 'ddddeeeeffffgggghhhh\033[0m\n'
+    printf '\033[?25l\033[32m  %s\033[0m\r\n' "${TEST_TOKEN_A:0:78}"
+    printf '  %s\033[?25h\r\n' "${TEST_TOKEN_A:78}"
+    ;;
+  token-wrapped-short)
+    printf '\033[32m  %s \r\n' "${TEST_TOKEN_A:0:20}"
+    printf '  %s\033[0m\r\n' "${TEST_TOKEN_A:20}"
+    ;;
+  token-footer)
+    printf '  %s\n  %s\nStore this token somewhere safe.\n' "${TEST_TOKEN_A:0:20}" "${TEST_TOKEN_A:20}"
+    ;;
+  token-prefix-wrapped)
+    printf '  %s\n  %s\n' "${TEST_TOKEN_A:0:13}" "${TEST_TOKEN_A:13}"
+    ;;
+  token-wrapped-blank)
+    printf '  %s\n  %s\n\nStore this token somewhere safe.\n' "${TEST_TOKEN_A:0:20}" "${TEST_TOKEN_A:20}"
+    ;;
+  token-twice)
+    printf '%s\n%s\n' "${TEST_TOKEN_A}" "${TEST_TOKEN_A}"
     ;;
   token-none)
     printf 'Login failed: no browser available.\n' >&2
     ;;
   token-two)
-    printf 'Old token: sk-ant-oat01-aaaabbbbccccddddeeeeffffgggghhhh\n'
-    printf 'New token: sk-ant-oat01-iiiijjjjkkkkllllmmmmnnnnoooopppp\n'
+    printf 'Old token: %s\n' "${TEST_TOKEN_A}"
+    printf 'New token: %s\n' "${TEST_TOKEN_B}"
     ;;
   fail)
     printf 'claude: setup-token failed\n' >&2
@@ -273,10 +329,19 @@ write_mock_curl() {
 #!/bin/bash
 set -uo pipefail
 
-url="" prev=""
+url="" prev="" authorization="" stdin_header=0
 for arg in "$@"; do
   case "${prev}" in
-    -H) printf 'header=%s\n' "${arg}" >> "${CURL_CALLS}" ;;
+    -H)
+      if [[ "${arg}" == "@-" ]]; then
+        stdin_header=1
+        IFS= read -r authorization || exit 2
+        printf 'header=%s\n' "${authorization}" >> "${CURL_CALLS}"
+      else
+        printf 'header=%s\n' "${arg}" >> "${CURL_CALLS}"
+      fi
+      ;;
+    *) ;;
   esac
   case "${arg}" in
     http://* | https://*) [[ -z "${url}" ]] && url="${arg}" ;;
@@ -288,6 +353,10 @@ printf 'url=%s\n' "${url}" >> "${CURL_CALLS}"
 
 case "${url}" in
   *api.anthropic.com*)
+    if [[ ${stdin_header} -ne 1 ]] || [[ "${authorization}" != "Authorization: Bearer "?* ]]; then
+      printf '%s\n' "curl: usage requires a Bearer header on stdin" >&2
+      exit 2
+    fi
     if [[ -f "${MOCK_CURL_USAGE_BODY:-/nonexistent}" ]]; then
       cat "${MOCK_CURL_USAGE_BODY}"
       exit 0
@@ -363,8 +432,8 @@ set_release_check_failure() {
 
 # --- credential fixtures -----------------------------------------------------
 
-export TEST_TOKEN_A="sk-ant-oat01-aaaabbbbccccddddeeeeffffgggghhhh"
-export TEST_TOKEN_B="sk-ant-oat01-iiiijjjjkkkkllllmmmmnnnnoooopppp"
+export TEST_TOKEN_A="sk-ant-oat01-abcdefg0123456789-_abcdefg0123456789-_abcdefg0123456789-_abcdefg0123456789-_abcdefg0123456789-_"
+export TEST_TOKEN_B="sk-ant-oat01-HIJKLMN9876543210_-HIJKLMN9876543210_-HIJKLMN9876543210_-HIJKLMN9876543210_-HIJKLMN9876543210_-"
 export TEST_APIKEY_A="sk-ant-api03-AAAABBBBCCCCDDDDEEEEFFFF"
 export TEST_APIKEY_B="sk-ant-api03-ZZZZYYYYXXXXWWWWVVVVUUUU"
 

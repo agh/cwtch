@@ -23,13 +23,13 @@ coverage.
 On macOS:
 
 ```bash
-brew install bats-core shellcheck shfmt jq yq
+brew install bats-core shellcheck shfmt actionlint jq yq
 make check
 ```
 
-Required development tools are Bash, Git, Make, bats 1.5 or later, shellcheck, shfmt, `jq`, and Mike
-Farah's real `yq` v4. Tool versions used by CI are pinned in the workflow and development
-environment. Update a version and its checksum together.
+Required development tools are Bash, Git, Make, bats 1.5 or later, shellcheck, shfmt, actionlint,
+`jq`, and Mike Farah's real `yq` v4. Tool versions used by CI are pinned in the workflow and
+development environment. Update a version and its checksum together.
 
 Read [AGENTS.md](AGENTS.md) for architecture, functions, shell constraints, and test conventions.
 

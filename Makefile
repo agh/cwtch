@@ -6,7 +6,8 @@
 # being something you can reproduce locally.
 #
 # `e2e` is deliberately not part of `check`: it clones from github.com and
-# writes to the real $HOME, so CI gives it a job of its own.
+# exercises real Git/filesystem operations in a sandboxed HOME with mocked
+# Keychain, so CI gives it a job of its own.
 #
 # Requires: shellcheck, shfmt, actionlint, bats, jq, yq. `make tools` reports
 # the versions and fails if any of them is too old.

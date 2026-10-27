@@ -21,7 +21,7 @@ Runtime dependencies:
 - Claude Code for `profile setup`
 - macOS `security` for OAuth snapshot profiles
 
-Development dependencies include bats 1.5 or later, shellcheck, shfmt, and Make.
+Development dependencies include bats 1.5 or later, shellcheck, shfmt, actionlint, and Make.
 
 ## Repository structure
 
@@ -54,11 +54,12 @@ cwtch/
 │   ├── env.bats            # profile env output and precedence warnings
 │   ├── status.bats         # Offline status rendering
 │   ├── usage.bats          # Best-effort usage rendering with a mocked curl
+│   ├── install.bats        # Source installer links, refusal, and backup failures
 │   ├── version.bats        # -v, --version and the update check
 │   ├── config.bats         # Cwtchfile validation
 │   ├── sync.bats           # Repositories, refs, outputs, manifest
 │   ├── sync-safety.bats    # Symlink-only replacement, backups, ref injection
-│   └── e2e.bats            # Real-output checks; network clone gated on CWTCH_E2E=1
+│   └── e2e.bats            # Git/filesystem checks with mocked Keychain; optional network
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 ├── Makefile
@@ -76,9 +77,10 @@ Profiles contain exactly one credential:
 - `.credential` — OAuth JSON copied from and restored to macOS Keychain
 - `.apikey` — API key exported as `ANTHROPIC_API_KEY`
 
-The selected name is stored in `~/.cwtch/.current`. `validate_name()` protects profile and
-namespace paths, `current_profile()` validates `.current`, and `write_secret()` creates mode-`600`
-files and their single `.bak` backup.
+The selected name is stored in `~/.cwtch/.current`, independently of the OAuth profile recorded in
+`~/.cwtch/.keychain-owner`. `validate_name()` protects profile and namespace paths,
+`current_profile()` and `keychain_owner()` validate stored names, and `write_secret()` creates
+mode-`600` files and their single `.bak` backup.
 
 ### Configuration
 
@@ -145,7 +147,7 @@ Use Make targets rather than duplicating tool arguments:
 | `make test` | Run the bats suite |
 | `make test-hermetic` | Run tests with isolated Git configuration and `USER` unset |
 | `make bash32-check` | Parse shell files with macOS `/bin/bash` 3.2 |
-| `make e2e` | Run macOS end-to-end checks against real platform facilities |
+| `make e2e` | Run macOS Git/filesystem end-to-end checks with mocked Keychain |
 
 CI runs linting and portable tests on Ubuntu 24.04, tests on macOS 15 and macOS 26, hermetic tests,
 Bash 3.2 parsing, and macOS end-to-end coverage.
@@ -181,7 +183,9 @@ Tests use bats 1.5 or later and the real `jq`, `yq`, and Git executables.
 
 Every behaviour change needs a focused bats test. Run related tests first, then `make check`.
 Platform-independent tests must pass on macOS and Ubuntu, both normally and with `USER` unset.
-Real Keychain integration belongs in macOS end-to-end coverage.
+The macOS end-to-end suite exercises real Git and filesystem operations in a sandboxed HOME but
+mocks Keychain. Real Keychain verification must use an explicitly named throwaway keychain, never
+the login keychain.
 
 ## Release procedure
 
@@ -192,6 +196,6 @@ Real Keychain integration belongs in macOS end-to-end coverage.
 5. Create a signed tag: `git tag -s vX.Y.Z -m "vX.Y.Z"`.
 6. Push the commit and tag.
 7. Replace the Homebrew formula checksum and bump the formula in
-   [agh/homebrew-cask](https://github.com/agh/homebrew-cask).
+   [agh/homebrew-tap](https://github.com/agh/homebrew-tap) (`agh/tap`).
 
 The release workflow requires the tag and `VERSION` to match.

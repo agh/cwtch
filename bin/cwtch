@@ -70,6 +70,8 @@ usage_help() {
   help_row "usage" "Show usage for OAuth profiles"
   printf '\n'
   help_row "sync" "Pull sources and build ~/.claude/"
+  help_row "sync --dry-run" "Show the plan without changing files"
+  help_row "sync --force" "Back up and replace a regular CLAUDE.md"
   help_row "sync init" "Create an example Cwtchfile"
   help_row "sync check" "Validate the Cwtchfile"
   printf '\n'
@@ -113,6 +115,10 @@ cmd_sync() {
     esac
     shift
   done
+  if [[ -n "${sub}" ]] && [[ -n "${flags[*]:-}" ]]; then
+    err "Sync options --force and --dry-run apply only to plain 'cwtch sync'"
+    return 1
+  fi
   case "${sub}" in
     "") do_sync ${flags[@]+"${flags[@]}"} ;;
     init) sync_init ;;
@@ -226,7 +232,33 @@ cleanup_tmpfile() {
   return 0
 }
 
-extract_tokens() { printf '%s' "$1" | grep -oE 'sk-ant-oat01-[A-Za-z0-9_-]+' | sort -u || true; }
+extract_tokens() {
+  printf '%s\n' "$1" | LC_ALL=C awk '
+    function emit() {
+      if (token != "") print token
+      token = ""
+    }
+    /sk-ant-oat01-/ {
+      emit()
+      rest = $0
+      while (match(rest, /sk-ant-oat01-[A-Za-z0-9_-]*/)) {
+        candidate = substr(rest, RSTART, RLENGTH)
+        rest = substr(rest, RSTART + RLENGTH)
+        if (rest ~ /^[[:space:]]*$/) token = candidate
+        else print candidate
+      }
+      next
+    }
+    {
+      line = $0
+      sub(/^[[:space:]]+/, "", line)
+      sub(/[[:space:]]+$/, "", line)
+      if (token != "" && line ~ /^[A-Za-z0-9_-]+$/) token = token line
+      else emit()
+    }
+    END { emit() }
+  ' | sort -u
+}
 
 cmd_setup() {
   local name="$1" stripped tokens count token
@@ -241,17 +273,12 @@ cmd_setup() {
     err "Failed to run claude setup-token"
     return 1
   }
-  stripped="$(sed $'s/\x1b\[[0-9;]*[A-Za-z]//g' "${CWTCH_TMPFILE}")"
+  stripped="$(LC_ALL=C sed $'s|\x1b\[[0-?]*[ -/]*[@-~]||g' "${CWTCH_TMPFILE}" | tr -d '\r')"
   cleanup_tmpfile
   CWTCH_TMPFILE=""
   trap - EXIT
   tokens="$(extract_tokens "${stripped}")"
   count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
-  if [[ "${count}" -lt 2 ]] && ! [[ "${tokens}" =~ ${TOKEN_RE} ]]; then
-    # No whole token on one line: recover one that the terminal wrapped.
-    tokens="$(extract_tokens "$(printf '%s' "${stripped}" | tr -d '\n\r ')")"
-    count="$(printf '%s\n' "${tokens}" | grep -c . || true)"
-  fi
   [[ "${count}" -eq 0 ]] && {
     err "Could not find a token in claude setup-token output"
     return 1
@@ -261,7 +288,14 @@ cmd_setup() {
     return 1
   }
   token="$(printf '%s\n' "${tokens}" | head -1)"
+  [[ ${#token} -le 256 ]] || {
+    err "Token candidate is longer than 256 characters; not saved"
+    return 1
+  }
   profile_save_token "${name}" "${token}" || return 1
+  # Setup tokens are 108 characters today; another length suggests a wrap was misread.
+  [[ ${#token} -eq ${SETUP_TOKEN_LEN} ]] ||
+    warn "Saved token is ${#token} characters, not the usual ${SETUP_TOKEN_LEN}; if Claude Code rejects it, run 'cwtch profile save-token ${name}' and paste it"
   printf '  Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
 }
 
@@ -287,7 +321,7 @@ env_precedence_warnings() {
   local var value
   for var in ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY; do
     value="$(printenv "${var}")" || value=""
-    [[ -n "${value}" ]] && printf '# %s is set in this shell and takes precedence over this profile\n' "${var}"
+    [[ -n "${value}" ]] && warn "${var} is set in this shell and takes precedence over this profile"
   done
   return 0
 }
@@ -320,7 +354,7 @@ cmd_env() {
       ;;
     oauth)
       printf '%s\n' "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
-      printf "# OAuth profile '%s': Claude Code uses the Keychain login\n" "${name}"
+      info "OAuth profile '${name}': Claude Code uses the Keychain login" >&2
       ;;
     'mixed!')
       err "Profile '${name}' holds more than one credential; save it again to fix it"
@@ -372,7 +406,11 @@ usage_oauth() {
     return 0
   fi
   data="$(fetch_usage "${token}")" || data=""
-  if [[ -z "${data}" ]]; then
+  if ! printf '%s' "${data}" | jq -se '
+    length == 1 and (.[0] | type == "object" and
+      (.five_hour.utilization | type == "number" and . >= 0) and
+      (.seven_day.utilization | type == "number" and . >= 0))
+  ' >/dev/null 2>&1; then
     profile_line "${marker}" "${name}" "${suffix} ${C_DIM}(usage unavailable)${C_RESET}"
     return 0
   fi

@@ -7,9 +7,9 @@ credential type belongs in each profile.
 
 | Type | File | Activation | Limits |
 |---|---|---|---|
-| Setup token | `.token` | `eval "$(cwtch profile env)"` exports `CLAUDE_CODE_OAUTH_TOKEN` | Created by `claude setup-token`; one-year and non-refreshing. It can only make model requests, so it can't establish Remote Control sessions or fetch claude.ai connectors. MCP servers you configure locally still work. Bare mode ignores it. |
+| Setup token | `.token` | `profile env` exports `CLAUDE_CODE_OAUTH_TOKEN`; apply it with the checked recipe below | Created by `claude setup-token`; one-year and non-refreshing. It can only make model requests, so it can't establish Remote Control sessions or fetch claude.ai connectors. MCP servers you configure locally still work. Bare mode ignores it. |
 | OAuth snapshot | `.credential` | `cwtch profile use` updates the default macOS Keychain entry | A point-in-time copy of a Claude Code login. Claude Code can refresh the active Keychain value, and cwtch snapshots that value before the next OAuth switch. |
-| API key | `.apikey` | `eval "$(cwtch profile env)"` exports `ANTHROPIC_API_KEY` | Intended for API-key authentication. It has higher precedence than setup-token and OAuth credentials. |
+| API key | `.apikey` | `profile env` exports `ANTHROPIC_API_KEY`; apply it with the checked recipe below | Intended for API-key authentication. It has higher precedence than setup-token and OAuth credentials. |
 
 `profile list` reports `(mixed!)` if a profile directory contains more than one credential file.
 Saving any profile type removes the other two credential files after the new value is safely
@@ -18,7 +18,7 @@ written.
 ## Names and credential validation
 
 Profile names must match `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$` and cannot be `.` or `..`. This rule
-also applies to the value stored in `~/.cwtch/.current`.
+also applies to the names stored in `~/.cwtch/.current` and `~/.cwtch/.keychain-owner`.
 
 Tokens must match:
 
@@ -41,13 +41,15 @@ Create and activate a token interactively:
 
 ```bash
 cwtch profile setup personal
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 `profile setup` captures the combined `claude setup-token` output in a mode-`600` temporary file,
-removes terminal escape sequences and line breaks, and requires exactly one token candidate. It
-does not repeat the captured output. If no token is found, it reports the failure; if several are
-found, use `profile save-token` and paste the intended value.
+removes terminal escape sequences and carriage returns, and rejoins token-only continuation
+lines. Blank lines and prose end a candidate; the whole transcript is never flattened. It requires
+exactly one distinct candidate of at most 256 characters and does not repeat the captured output.
+If no token is found, it reports the failure; if several are found, use `profile save-token` and
+paste the intended value. Repeated copies of the same token are accepted.
 
 Save an existing token from a hidden prompt or standard input:
 
@@ -61,7 +63,7 @@ shell:
 
 ```bash
 cwtch profile use work
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 ## OAuth snapshot profiles
@@ -73,14 +75,32 @@ claude auth login
 cwtch profile save work
 ```
 
+Saving or restoring an OAuth snapshot requires a JSON object with a non-empty string at
+`.claudeAiOauth.accessToken`. Invalid snapshots cannot overwrite a working Keychain login.
+
 Switching to an OAuth profile performs these operations in order:
 
-1. If the outgoing active profile is also OAuth and the current Keychain value is valid credential
-   JSON with a `.claudeAiOauth.accessToken`, cwtch writes it back to that profile. This preserves a
-   credential Claude Code may have refreshed.
-2. cwtch updates the `Claude Code-credentials` Keychain item in place. If the update fails, the
-   selected profile is not changed.
-3. cwtch writes the new profile name to `~/.cwtch/.current`.
+1. cwtch validates the selected snapshot before changing anything.
+2. If the Keychain owner is an OAuth profile and the live Keychain value is valid OAuth JSON,
+   cwtch writes it back to that profile. If the snapshot write fails, the switch aborts before
+   changing Keychain or the selected name.
+3. cwtch stages the new name for `~/.cwtch/.keychain-owner`; if it cannot, nothing changes.
+4. cwtch updates the `Claude Code-credentials` item for the current macOS account in place. If the
+   update fails, the selected profile is not changed. If the staged owner record then cannot be
+   moved into place, cwtch restores the previous Keychain value and reports the failure.
+5. cwtch records the new name in `~/.cwtch/.current`.
+
+An unreadable or invalid `.keychain-owner` stops OAuth switches until it is fixed or removed,
+because cwtch could not tell which profile owns the refreshed login.
+
+`profile save` also records Keychain ownership. Token and API-key selections leave that ownership
+unchanged, so an OAuth login refreshed while either is selected is still preserved at the next
+OAuth switch. When `.keychain-owner` is absent, cwtch uses `.current` if it names an OAuth profile,
+providing migration from 6.0.0. That fallback is recorded before selecting a token or API-key
+profile, so the first switch after upgrading does not lose ownership.
+
+If `CLAUDE_CODE_OAUTH_TOKEN` or `ANTHROPIC_API_KEY` is set when switching to OAuth, cwtch warns that
+the environment overrides Keychain and prints the checked `profile env` recipe to clear it.
 
 There is an important snapshot-before-switch caveat: if you run `/login` for a different account
 while an OAuth profile is active, then switch profiles, the new login is captured into the
@@ -106,7 +126,7 @@ Save, select, and apply an API key:
 ```bash
 cwtch profile save-key ci-bot
 cwtch profile use ci-bot
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 An API key can also be supplied on standard input:
@@ -121,6 +141,29 @@ at one fixed, named API-key profile such as `~/.cwtch/profiles/ci-bot/.apikey`. 
 therefore does not provide a stable credential identity.
 
 ## Applying a profile to the shell
+
+Capture the output successfully before evaluating it:
+
+```bash
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
+```
+
+This leaves errors visible and preserves the failing exit status. A bare
+`eval "$(cwtch profile env)"` can instead evaluate an empty string and report success after
+`profile env` fails. The short hints printed by `profile use`, `profile setup`, and `status`
+retain that compact form for
+readability; use the checked recipe in scripts and shell configuration.
+
+For bash or zsh, a small function can select and apply a profile together:
+
+```bash
+cwtch_use() {
+  local cwtch_env
+  cwtch profile use "$1" || return
+  cwtch_env="$(cwtch profile env)" || return
+  eval "${cwtch_env}"
+}
+```
 
 For a token profile, `cwtch profile env` writes:
 
@@ -140,12 +183,12 @@ For an OAuth snapshot:
 
 ```sh
 unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
-# OAuth profile '<name>': Claude Code uses the Keychain login
 ```
 
 The credential is validated again before it is printed. If `ANTHROPIC_AUTH_TOKEN`,
 `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, or `CLAUDE_CODE_USE_FOUNDRY` is already set,
-`profile env` adds a comment warning that the variable takes precedence.
+`profile env` warns on standard error that the variable takes precedence. The OAuth explanation
+also goes to standard error; standard output contains only evaluable shell statements.
 
 Claude Code authentication precedence is: cloud-provider credentials, `ANTHROPIC_AUTH_TOKEN`,
 `ANTHROPIC_API_KEY`, `apiKeyHelper`, `CLAUDE_CODE_OAUTH_TOKEN`, federation profiles, then `/login`
@@ -165,8 +208,9 @@ cwtch profile delete personal
 ```
 
 `profile current` prints the selected name or `(none)`. Deleting the active profile also removes
-`.current`. All name-bearing commands validate the name first, and deletion refuses any resolved
-path outside the named profile directory.
+`.current`. Deleting the Keychain owner also removes `.keychain-owner`, without deleting the
+Keychain login itself. All name-bearing commands validate the name first, and deletion refuses any
+resolved path outside the named profile directory.
 
 ## Status and usage
 
@@ -178,10 +222,13 @@ Cwtchfile path. It does not fetch usage.
 
 - token and API-key profiles are labelled by type;
 - malformed OAuth snapshots are shown as `(unreadable credential)`;
-- failed usage requests are shown as `(usage unavailable)`;
+- failed usage requests and invalid responses are shown as `(usage unavailable)`;
 - successful requests show the 5-hour and 7-day percentages plus active limit entries.
 
 Requests have a ten-second timeout. Claude Code's `/usage` display remains authoritative.
+Responses must contain one JSON object with non-negative numeric `five_hour.utilization` and
+`seven_day.utilization` values. Missing, null, and non-numeric values are unavailable, not zero
+usage; genuine numeric zero is displayed as `0%`.
 
 ## Deprecated refresh command
 
@@ -199,6 +246,7 @@ successfully.
 ```text
 ~/.cwtch/
 ├── .current
+├── .keychain-owner
 └── profiles/
     ├── personal/
     │   └── .token

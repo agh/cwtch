@@ -30,11 +30,13 @@ readonly PROFILES_DIR="${CWTCH_DIR}/profiles"
 readonly SOURCES_DIR="${CWTCH_DIR}/sources"
 readonly CWTCHFILE="${CWTCH_DIR}/Cwtchfile"
 readonly CURRENT_FILE="${CWTCH_DIR}/.current"
+readonly KEYCHAIN_OWNER_FILE="${CWTCH_DIR}/.keychain-owner"
 readonly KEYCHAIN_SVC="Claude Code-credentials"
 readonly KEYCHAIN_ACCT="${USER:-$(id -un)}"
 readonly USAGE_API="https://api.anthropic.com/api/oauth/usage"
 readonly NAME_RE='^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$'
 readonly TOKEN_RE='^sk-ant-oat01-[A-Za-z0-9_-]{20,}$'
+readonly SETUP_TOKEN_LEN=108
 readonly APIKEY_RE='^[A-Za-z0-9_-]{20,}$'
 
 # Output helpers. Untrusted text always goes through %s; only our own colour
@@ -67,9 +69,60 @@ current_profile() {
   return 1
 }
 
+# Write <name> to a temporary file beside <path> and print its path, so a
+# caller can prove the write will succeed before changing anything else.
+stage_profile_name() {
+  local path="$1" name="$2" tmp
+  validate_name "${name}" || return 1
+  mkdir -p "${CWTCH_DIR}" || return 1
+  if [[ -d "${path}" ]]; then
+    err "Could not write ${path}: is a directory"
+    return 1
+  fi
+  tmp="$(mktemp "${path}.XXXXXX")" || {
+    err "Could not create a temporary file for ${path}"
+    return 1
+  }
+  if ! printf '%s\n' "${name}" >"${tmp}"; then
+    rm -f "${tmp}"
+    err "Could not write ${path}"
+    return 1
+  fi
+  printf '%s\n' "${tmp}"
+}
+
+write_profile_name() {
+  local path="$1" tmp
+  tmp="$(stage_profile_name "${path}" "$2")" || return 1
+  mv -f "${tmp}" "${path}" || {
+    rm -f "${tmp}"
+    err "Could not write ${path}"
+    return 1
+  }
+}
+
 set_current() {
-  mkdir -p "${CWTCH_DIR}"
-  printf '%s\n' "$1" >"${CURRENT_FILE}"
+  local owner
+  # Preserve the migration fallback before a non-OAuth selection hides it.
+  if [[ ! -e "${KEYCHAIN_OWNER_FILE}" ]] && [[ ! -L "${KEYCHAIN_OWNER_FILE}" ]]; then
+    owner="$(keychain_owner)" || owner=""
+    [[ -z "${owner}" ]] || set_keychain_owner "${owner}" || return 1
+  fi
+  write_profile_name "${CURRENT_FILE}" "$1"
+}
+set_keychain_owner() { write_profile_name "${KEYCHAIN_OWNER_FILE}" "$1"; }
+
+# 0 = owner printed, 1 = no owner, 2 = .keychain-owner exists but is unreadable or invalid.
+keychain_owner() {
+  local name
+  if [[ -e "${KEYCHAIN_OWNER_FILE}" ]] || [[ -L "${KEYCHAIN_OWNER_FILE}" ]]; then
+    name="$(cat "${KEYCHAIN_OWNER_FILE}" 2>/dev/null)" || return 2
+    validate_name "${name}" 2>/dev/null || return 2
+  else
+    name="$(current_profile)" || return 1
+    [[ "$(profile_type "${name}")" == "oauth" ]] || return 1
+  fi
+  printf '%s\n' "${name}"
 }
 
 # Write a secret file at mode 0600 from creation, keeping one .bak of the
@@ -112,15 +165,38 @@ profile_type() {
   printf '%s\n' "${type}"
 }
 
-get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -w 2>/dev/null || true; }
+get_cred() { security find-generic-password -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -w 2>/dev/null || true; }
+
+# Longest command line 'security -i' reads intact; Claude Code uses the same
+# limit and falls back to argv beyond it.
+readonly SECURITY_STDIN_MAX=4032
 
 # Replace the Keychain item in place; no delete step, so a failure leaves the
 # existing login untouched.
 set_cred() {
-  security add-generic-password -U -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -w "$1" >/dev/null 2>&1
+  local hex command service="${KEYCHAIN_SVC}" account="${KEYCHAIN_ACCT}"
+  hex="$(printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n')" || return 1
+  service="${service//\\/\\\\}"
+  service="${service//\"/\\\"}"
+  account="${account//\\/\\\\}"
+  account="${account//\"/\\\"}"
+  command="$(printf 'add-generic-password -U -s "%s" -a "%s" -X "%s"' \
+    "${service}" "${account}" "${hex}")"
+  if [[ ${#command} -le ${SECURITY_STDIN_MAX} ]]; then
+    printf '%s\n' "${command}" | security -i >/dev/null 2>&1
+  else
+    # Too long for one interactive line; a truncated line would store a corrupt item.
+    security add-generic-password -U -s "${KEYCHAIN_SVC}" -a "${KEYCHAIN_ACCT}" -X "${hex}" >/dev/null 2>&1
+  fi
 }
 
-is_oauth_json() { printf '%s' "$1" | jq -e '.claudeAiOauth.accessToken' >/dev/null 2>&1; }
+is_oauth_json() {
+  printf '%s' "$1" | jq -se '
+    length == 1 and (.[0] | type == "object" and
+      (.claudeAiOauth | type == "object" and
+        (.accessToken | type == "string" and length > 0)))
+  ' >/dev/null 2>&1
+}
 
 keychain_config_warning() {
   [[ -n "${CLAUDE_CONFIG_DIR:-}" ]] || return 0
@@ -136,10 +212,10 @@ get_token() {
 }
 
 fetch_usage() {
-  curl -sf --max-time 10 "${USAGE_API}" \
+  printf 'Authorization: Bearer %s\n' "$1" | curl -sf --max-time 10 "${USAGE_API}" \
     -H "Accept: application/json" \
     -H "User-Agent: claude-code/2.0.32" \
-    -H "Authorization: Bearer $1" \
+    -H @- \
     -H "anthropic-beta: oauth-2025-04-20" 2>/dev/null
 }
 
@@ -184,12 +260,17 @@ profile_save() {
     err "No credential in keychain"
     return 1
   }
+  is_oauth_json "${cred}" || {
+    err "Keychain credential is not valid OAuth JSON; not saved"
+    return 1
+  }
   write_secret "${target}/.credential" "${cred}" || {
     err "Could not write credential for '${name}'"
     return 1
   }
   prune_other_creds "${name}" .credential
-  set_current "${name}"
+  set_keychain_owner "${name}" || return 1
+  set_current "${name}" || return 1
   log "Saved credential for '${name}'"
 }
 
@@ -206,7 +287,7 @@ profile_save_key() {
     return 1
   }
   prune_other_creds "${name}" .apikey
-  set_current "${name}"
+  set_current "${name}" || return 1
   log "Saved '${name}' (api-key)"
 }
 
@@ -223,39 +304,69 @@ profile_save_token() {
     return 1
   }
   prune_other_creds "${name}" .token
-  set_current "${name}"
+  set_current "${name}" || return 1
   log "Saved '${name}' (token)"
 }
 
 # Snapshot the live Keychain credential into the outgoing OAuth profile before
 # switching: Claude Code refreshes that credential in place.
 snapshot_outgoing_cred() {
-  local current live
-  current="$(current_profile 2>/dev/null)" || return 0
-  [[ -f "${PROFILES_DIR}/${current}/.credential" ]] || return 0
+  local owner live rc=0
+  owner="$(keychain_owner)" || rc=$?
+  if [[ ${rc} -eq 2 ]]; then
+    err "Cannot read ${KEYCHAIN_OWNER_FILE}; fix or remove it before switching OAuth profiles"
+    return 1
+  fi
+  [[ ${rc} -eq 0 ]] || return 0
+  [[ "$(profile_type "${owner}")" == "oauth" ]] || return 0
   live="$(get_cred)"
   [[ -n "${live}" ]] || return 0
   is_oauth_json "${live}" || return 0
-  write_secret "${PROFILES_DIR}/${current}/.credential" "${live}" ||
-    warn "Could not snapshot the current credential into '${current}'"
-  return 0
+  write_secret "${PROFILES_DIR}/${owner}/.credential" "${live}" || {
+    err "Could not snapshot the Keychain credential into '${owner}'; switch aborted"
+    return 1
+  }
 }
 
 profile_use_oauth() {
-  local name="$1" cred
+  local name="$1" cred previous owner_tmp
   keychain_config_warning
-  snapshot_outgoing_cred
   cred="$(cat "${PROFILES_DIR}/${name}/.credential")"
-  [[ -n "${cred}" ]] || {
-    err "No credential for '${name}'"
+  is_oauth_json "${cred}" || {
+    err "Credential for '${name}' is not valid OAuth JSON; nothing changed"
+    return 1
+  }
+  snapshot_outgoing_cred || return 1
+  # A snapshot may have refreshed this very profile.
+  cred="$(cat "${PROFILES_DIR}/${name}/.credential")" || return 1
+  previous="$(get_cred)"
+  # The owner record must follow the Keychain exactly, or a later snapshot
+  # would file one account's login under another; stage it before the switch.
+  owner_tmp="$(stage_profile_name "${KEYCHAIN_OWNER_FILE}" "${name}")" || {
+    err "Could not record the Keychain owner; nothing changed"
     return 1
   }
   set_cred "${cred}" || {
+    rm -f "${owner_tmp}"
     err "Keychain update failed; nothing changed"
     return 1
   }
-  set_current "${name}"
+  if ! mv -f "${owner_tmp}" "${KEYCHAIN_OWNER_FILE}"; then
+    rm -f "${owner_tmp}"
+    if [[ -n "${previous}" ]] && set_cred "${previous}"; then
+      err "Could not record the Keychain owner; restored the previous login"
+    else
+      err "Could not record the Keychain owner; the Keychain now holds '${name}'"
+    fi
+    return 1
+  fi
+  set_current "${name}" || return 1
   log "Switched to '${name}' (oauth)"
+  if [[ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ]] || [[ -n "${ANTHROPIC_API_KEY:-}" ]]; then
+    warn "CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY is set in this shell and overrides the Keychain login"
+    # shellcheck disable=SC2016 # printed for the calling shell to evaluate
+    dim '  Apply to this shell: cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"' >&2
+  fi
 }
 
 profile_use() {
@@ -268,7 +379,7 @@ profile_use() {
   type="$(profile_type "${name}")"
   case "${type}" in
     token | api-key)
-      set_current "${name}"
+      set_current "${name}" || return 1
       log "Switched to '${name}' (${type})"
       printf '  Apply to this shell: %b\n' "${C_CYAN}eval \"\$(cwtch profile env)\"${C_RESET}"
       ;;
@@ -285,7 +396,7 @@ profile_use() {
 }
 
 profile_delete() {
-  local name="$1" target real expected current
+  local name="$1" target real expected current owner
   validate_name "${name}" || return 1
   target="${PROFILES_DIR}/${name}"
   [[ -d "${target}" ]] || {
@@ -298,9 +409,11 @@ profile_delete() {
     err "Refusing to delete '${name}': not a profile directory"
     return 1
   fi
+  owner="$(keychain_owner)" || owner=""
   rm -rf "${target}"
   current="$(current_profile 2>/dev/null)" || current=""
   [[ "${current}" == "${name}" ]] && rm -f "${CURRENT_FILE}"
+  [[ "${owner}" == "${name}" ]] && rm -f "${KEYCHAIN_OWNER_FILE}"
   log "Deleted '${name}'"
 }
 

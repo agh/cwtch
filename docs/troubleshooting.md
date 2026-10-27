@@ -7,7 +7,7 @@ token or API-key switch:
 
 ```bash
 cwtch profile use personal
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 `profile env` unsets both cwtch-managed variables before exporting the selected one.
@@ -37,9 +37,9 @@ before deleting it because backups contain secrets.
 
 ## Switching OAuth profiles captured the wrong account
 
-Before an OAuth-to-OAuth switch, cwtch snapshots the current Keychain credential into the outgoing
-profile. If you used `/login` for a different account while that profile was active, save the new
-login under its own name before switching:
+Before an OAuth switch, cwtch snapshots the current Keychain credential into the profile recorded
+in `.keychain-owner`, even if a token or API-key profile was selected in between. If you used
+`/login` for a different account, save the new login under its own name before switching:
 
 ```bash
 cwtch profile save new-account

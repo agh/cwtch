@@ -108,7 +108,8 @@ Claude Code's configuration directory is `${CLAUDE_CONFIG_DIR:-$HOME/.claude}`.
 values win when the same key exists; the repository file supplies defaults. When existing content
 changes, cwtch writes `settings.json.bak` before replacing it. If no target exists, cwtch creates
 one at mode `600`. Existing permission modes are preserved for both the target and its backup;
-writes use unique temporary files and atomic replacement.
+writes use unique temporary files and atomic replacement. A symlinked `settings.json` is refused
+rather than replaced, and a `.bak` path that is a directory or other non-file stops the merge.
 
 ### CLAUDE.md
 
@@ -181,9 +182,12 @@ User-scope MCP servers belong in `~/.claude.json`, not `settings.json`. When
 
 For each source, cwtch normalises a wrapped `mcpServers` object or bare server map, then merges it
 into `.mcpServers`. Existing servers are retained; newly configured servers win on a duplicate
-name. Changes back up the previous file to `.claude.json.bak`. If the file is absent, cwtch creates
-it with a top-level `mcpServers` object and mode `600`. Existing permission modes are preserved
-for both the target and its backup; writes use unique temporary files and atomic replacement.
+name by replacing that server's entire definition, not deep-merging its fields. Switching a
+server from stdio to HTTP therefore removes old `command`, `args`, and `env` fields. Changes back
+up the previous file to `.claude.json.bak`. If the file is absent, cwtch creates it with a
+top-level `mcpServers` object and mode `600`. Existing permission modes are preserved for both the
+target and its backup; writes use unique temporary files and atomic replacement. A symlinked
+`.claude.json` is refused.
 
 ## Link safety and pruning
 
@@ -222,6 +226,9 @@ sync" while a populated manifest is being processed.
 
 A complete run ends with `Sync complete`. Source failures are printed as they happen, followed by
 `Sync finished with N error(s)`, and the command exits with status `1`.
+
+`--dry-run` and `--force` apply only to plain `sync`, not `sync init` or `sync check`. An empty
+configuration still reports managed links it would prune during a dry run.
 
 ## Migrating from 5.x
 

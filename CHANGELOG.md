@@ -11,6 +11,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Preview and report stale-link pruning when every Cwtchfile declaration has been removed,
   instead of incorrectly reporting "Nothing to sync"
+- Reassemble indented, wrapped setup tokens without saving a valid-looking fragment or appending
+  footer prose; accept repeated copies of one token and reject oversized candidates; warn when a
+  saved token is not the usual 108 characters
+- Keep `profile env` standard output limited to shell statements, send warnings and OAuth
+  information to standard error, and document checked shell activation
+- Preserve refreshed OAuth credentials across intervening token or API-key selections by tracking
+  the Keychain owner in `.keychain-owner`; record it before replacing the Keychain item, restore
+  the previous login if that fails, and abort switches when a snapshot cannot be saved or the
+  owner record is unreadable
+- Validate OAuth snapshots before saving or restoring them, read Keychain entries for the correct
+  account, and warn when shell credentials override an OAuth switch
+- Report malformed usage responses as unavailable instead of displaying misleading zero usage
+- Replace duplicate MCP server definitions in full so transport changes leave no stale fields
+- Refuse symlinked `settings.json` and `.claude.json` targets, and refuse, in dry runs and real
+  syncs, a `.bak` path that is a directory or other non-file
+- Advertise sync flags and reject them on sync subcommands
+- Stop the source installer if an existing executable or symlink cannot be backed up
+- Correct Homebrew installation instructions to use `agh/tap/cwtch`
 
 ### Security
 
@@ -19,6 +37,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `.tmp` symlinks
 - Reject embedded credentials in repository URLs before invoking Git, redact credential-bearing
   userinfo in repository displays and checkout slugs, and retain username-only SSH support
+- Send usage Authorization headers and restored Keychain credentials on standard input rather
+  than exposing secrets in `curl` or `security` argument lists; like Claude Code, credentials
+  longer than one `security -i` line (4,032 characters, hex-encoded) still go through argv
 
 ## [6.0.0] - 2026-09-07
 

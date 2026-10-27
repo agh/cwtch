@@ -22,8 +22,10 @@ credential and its backup. Do not commit, upload, or broadly synchronise
 ## Keychain and configuration directories
 
 OAuth profiles use the macOS Keychain service `Claude Code-credentials` and the current account
-name. cwtch updates the item in place and leaves `.current` unchanged if Keychain reports a
-failure.
+name for both reads and writes. cwtch validates OAuth JSON before saving or restoring it, tracks
+the login's profile in `.keychain-owner` independently of the shell selection, and aborts a switch
+if it cannot preserve a refreshed credential. It updates the item in place and leaves `.current`
+unchanged if Keychain reports a failure.
 
 Claude Code uses a differently keyed Keychain item when `CLAUDE_CONFIG_DIR` is set. cwtch still
 uses the default entry and warns before OAuth operations. Configuration sync does honour the
@@ -31,7 +33,7 @@ custom directory for `settings.json`, `CLAUDE.md`, skills, agents, and `.claude.
 
 ## Commands that print secrets
 
-`cwtch profile env` prints this unset command before the selected export or OAuth comment:
+`cwtch profile env` prints this unset command before the selected export:
 
 ```sh
 unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
@@ -44,9 +46,14 @@ logs, scrollback capture, and redirection to unprotected files.
 `profile setup` does not repeat the raw `claude setup-token` output. It captures that output in a
 mode-`600` temporary file, validates exactly one token, and removes the temporary file.
 
-Environment credentials are inherited by child processes. OAuth restoration also passes the
-credential to macOS `security` through its `-w` command-line argument; same-user process inspection
-may expose that argument briefly. Do not run profile operations on an untrusted multi-user system.
+Environment credentials are inherited by child processes. Usage requests send the Authorization
+header to `curl -H @-` on standard input, so the token never appears in `curl`'s argument list.
+OAuth restoration sends hex-encoded credential JSON to `security -i` on standard input. Like Claude
+Code, cwtch falls back to passing the hex-encoded JSON as a `security` argument when the command
+would exceed the 4,032 characters `security -i` reads intact (credential JSON over roughly 1,950
+bytes); during that call the encoded credential is visible to same-user process listings.
+This does not protect secrets from same-user memory inspection; do not run profile operations on
+an untrusted multi-user system.
 
 ## Authentication precedence
 
@@ -98,6 +105,9 @@ directory. cwtch does not recursively delete link targets.
 
 Removing every declaration still prunes previously managed links. `sync --dry-run` lists those
 removals without changing the links or manifest.
+
+A symlinked `settings.json` or `.claude.json` is refused rather than replaced, and backups are
+renamed into place, so a symlink at a `.bak` path is replaced rather than followed.
 
 Git refs are validated, and Git commands place `--` before untrusted refs and URLs.
 

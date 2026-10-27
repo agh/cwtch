@@ -496,14 +496,16 @@ claude_md: ${repo}:config/CLAUDE.md"
 @test "F11: a server of the same name is replaced by the source's definition" {
   local repo
   repo="$(create_mock_repo demo)"
-  printf '%s\n' '{"mcpServers":{"demo":{"command":"stale"}}}' > "${HOME}/.claude.json"
+  printf '%s\n' '{"mcpServers":{"demo":{"command":"stale","args":["--stdio"],"env":{"OLD":"1"}}}}' > "${HOME}/.claude.json"
+  repo_commit "${repo}" mcp.json '{"mcpServers":{"demo":{"type":"http","url":"https://example.com/mcp"}}}'
   create_cwtchfile "sources:
   - repo: ${repo}
     as: demo
     mcp: mcp.json"
   run cwtch sync
   assert_status 0
-  [[ "$(jq -r '.mcpServers.demo.command' "${HOME}/.claude.json")" == "demo" ]]
+  [[ "$(jq -c '.mcpServers.demo' "${HOME}/.claude.json")" == '{"type":"http","url":"https://example.com/mcp"}' ]]
+  [[ "$(jq '.mcpServers.demo | has("command") or has("args") or has("env")' "${HOME}/.claude.json")" == false ]]
 }
 
 @test "F21: CLAUDE_CONFIG_DIR moves both the config tree and .claude.json" {
@@ -695,11 +697,48 @@ sources:
   - repo: ${repo}
     as: demo
     skills: skills/"
-  run cwtch --help
-  if [[ "${output}" != *"--dry-run"* ]]; then
-    skip "sync --dry-run is optional in SPEC-v6 §2.3 and is not advertised"
-  fi
   run cwtch sync --dry-run
   assert_status 0
+  assert_output_contains "would clone"
   [[ ! -e "${HOME}/.claude/skills/demo-reviewer" ]]
+  [[ ! -e "${HOME}/.cwtch/sources" ]]
+  [[ ! -e "${HOME}/.cwtch/state/links" ]]
+}
+
+@test "sync flags are advertised and rejected with subcommands in either order" {
+  run cwtch --help
+  assert_status 0
+  assert_output_contains "sync --dry-run"
+  assert_output_contains "sync --force"
+  local flag sub
+  for flag in --dry-run --force; do
+    for sub in init check; do
+      run --separate-stderr cwtch sync "${flag}" "${sub}"
+      assert_status 1
+      assert_stderr_contains "apply only to plain 'cwtch sync'"
+      run --separate-stderr cwtch sync "${sub}" "${flag}"
+      assert_status 1
+      assert_stderr_contains "apply only to plain 'cwtch sync'"
+    done
+  done
+  [[ ! -e "${HOME}/.cwtch/Cwtchfile" ]]
+}
+
+@test "sync --dry-run with empty configuration reports pruning without changing links or manifest" {
+  local repo manifest
+  repo="$(create_mock_repo demo)"
+  create_cwtchfile "sources:
+  - repo: ${repo}
+    as: demo
+    agents: agents/"
+  run cwtch sync
+  assert_status 0
+  manifest="$(cat "${HOME}/.cwtch/state/links")"
+  create_cwtchfile "sources: []"
+  run cwtch sync --dry-run
+  assert_status 0
+  assert_output_contains "would remove ${HOME}/.claude/agents/demo"
+  assert_output_contains "Dry run: nothing was changed"
+  [[ -L "${HOME}/.claude/agents/demo" ]]
+  [[ "$(cat "${HOME}/.cwtch/state/links")" == "${manifest}" ]]
 }
