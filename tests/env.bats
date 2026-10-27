@@ -22,7 +22,7 @@ teardown() { teardown_test_env; }
   set_current tok
   run cwtch profile env
   assert_status 0
-  [[ "${lines[0]}" == "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY" ]]
+  [[ "${lines[0]}" == "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE" ]]
 }
 
 @test "F6: a token profile exports only CLAUDE_CODE_OAUTH_TOKEN" {
@@ -48,7 +48,7 @@ teardown() { teardown_test_env; }
   set_current personal
   run --separate-stderr cwtch profile env
   assert_status 0
-  [[ "${output}" == "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY" ]]
+  [[ "${output}" == $'unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE\nexport CWTCH_PROFILE=\'personal\'' ]]
   assert_stderr_contains "OAuth profile 'personal'"
   assert_stderr_contains "Keychain"
 }
@@ -136,4 +136,107 @@ teardown() { teardown_test_env; }
   run cwtch profile env
   assert_status 0
   assert_output_lacks "precedence"
+}
+
+@test "named env activates token and API-key profiles without a global selection" {
+  write_token_profile tok
+  write_apikey_profile api
+  local name shell
+  for shell in bash zsh; do
+    if ! command -v "${shell}" >/dev/null 2>&1; then
+      continue
+    fi
+    for name in tok api; do
+      run --separate-stderr "${shell}" -f -c '
+        set -eu
+        export CLAUDE_CODE_OAUTH_TOKEN=stale ANTHROPIC_API_KEY=stale CWTCH_PROFILE=stale
+        cwtch_env="$(cwtch profile env "$1")" && eval "${cwtch_env}"
+        test "${CWTCH_PROFILE}" = "$1"
+        if test "$1" = tok; then
+          test "${CLAUDE_CODE_OAUTH_TOKEN}" = "${TEST_TOKEN_A}"
+          test "${ANTHROPIC_API_KEY:-unset}" = unset
+        else
+          test "${ANTHROPIC_API_KEY}" = "${TEST_APIKEY_A}"
+          test "${CLAUDE_CODE_OAUTH_TOKEN:-unset}" = unset
+        fi
+      ' _ "${name}"
+      assert_status 0
+      [[ -z "${stderr}" ]]
+    done
+  done
+  [[ ! -e "${HOME}/.cwtch/.current" ]]
+  [[ ! -e "${HOME}/.cwtch/.keychain-owner" ]]
+  [[ -z "$(security_calls)" ]]
+}
+
+@test "named env never reads or changes invalid global selection and ownership" {
+  write_token_profile tok
+  set_current '../invalid'
+  printf '%s\n' '../owner' > "${HOME}/.cwtch/.keychain-owner"
+  run --separate-stderr cwtch profile env tok
+  assert_status 0
+  [[ -z "${stderr}" ]]
+  assert_output_contains "export CWTCH_PROFILE='tok'"
+  [[ "$(current_file_contents)" == '../invalid' ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == '../owner' ]]
+}
+
+@test "named env does not change the default used by another shell" {
+  write_token_profile personal
+  write_token_profile work "${TEST_TOKEN_B}"
+  set_current personal
+  run --separate-stderr bash -c 'cwtch_env="$(cwtch profile env work)" && eval "${cwtch_env}"; test "${CWTCH_PROFILE}" = work; test "${CLAUDE_CODE_OAUTH_TOKEN}" = "${TEST_TOKEN_B}"'
+  assert_status 0
+  run cwtch profile env
+  assert_status 0
+  assert_output_contains "export CWTCH_PROFILE='personal'"
+  assert_output_contains "export CLAUDE_CODE_OAUTH_TOKEN='${TEST_TOKEN_A}'"
+  [[ "$(current_file_contents)" == personal ]]
+}
+
+@test "named env rejects unknown, invalid, empty, mixed, and OAuth profiles without stdout" {
+  write_oauth_profile oauth
+  write_token_profile mixed
+  write_apikey_profile mixed
+  mkdir -p "${HOME}/.cwtch/profiles/empty"
+  local name
+  for name in ghost '../outside' '' "bad'name" empty mixed oauth; do
+    run --separate-stderr cwtch profile env "${name}"
+    assert_status 1
+    [[ -z "${output}" ]]
+    [[ -n "${stderr}" ]]
+  done
+  assert_stderr_contains "Keychain login is global"
+  assert_stderr_contains "cwtch profile use oauth"
+  [[ -z "$(security_calls)" ]]
+}
+
+@test "every current-profile activation exports its launch label" {
+  write_token_profile tok
+  write_apikey_profile api
+  write_oauth_profile oauth
+  local name
+  for name in tok api oauth; do
+    set_current "${name}"
+    run --separate-stderr cwtch profile env
+    assert_status 0
+    [[ "${lines[0]}" == "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE" ]]
+    assert_output_contains "export CWTCH_PROFILE='${name}'"
+  done
+}
+
+@test "named env keeps precedence warnings on stderr" {
+  write_token_profile work
+  run --separate-stderr env ANTHROPIC_AUTH_TOKEN=override cwtch profile env work
+  assert_status 0
+  assert_stderr_contains "ANTHROPIC_AUTH_TOKEN"
+  assert_output_lacks "precedence"
+}
+
+@test "env rejects extra names without stdout" {
+  write_token_profile work
+  run --separate-stderr cwtch profile env work ignored
+  assert_status 1
+  [[ -z "${output}" ]]
+  assert_stderr_contains "Usage:"
 }

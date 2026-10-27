@@ -72,6 +72,7 @@ setup_test_env() {
   export NO_COLOR=1
   export TERM=dumb
   unset CLAUDE_CONFIG_DIR CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+  unset CWTCH_PROFILE
   unset ANTHROPIC_AUTH_TOKEN CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX
   unset CLAUDE_CODE_USE_FOUNDRY EDITOR GIT_DIR GIT_WORK_TREE
 
@@ -93,7 +94,7 @@ setup_test_env() {
   : >"${SECURITY_CALLS}"
   : >"${CLAUDE_CALLS}"
   : >"${CURL_CALLS}"
-  unset MOCK_SECURITY_ADD_FAIL MOCK_CLAUDE_MODE MOCK_CLAUDE_TOKEN
+  unset MOCK_SECURITY_ADD_FAIL MOCK_CLAUDE_MODE MOCK_CLAUDE_TOKEN EXPECT_CLAUDE_ARGV
   unset EXPECT_KEYCHAIN_SVC EXPECT_KEYCHAIN_ACCT MOCK_OTHER_KEYCHAIN_ACCT
   unset MOCK_CURL_USAGE_BODY MOCK_CURL_RELEASE_HEADERS
   export MOCK_CURL_USAGE_EXIT=22
@@ -257,13 +258,18 @@ MOCK
   chmod +x "$1"
 }
 
-# Strict `claude` mock: rejects any argv other than the contracted one and
-# scripts its output through MOCK_CLAUDE_MODE.
+# Strict `claude` mock: setup-token by default, with an opt-in launch mode.
 write_mock_claude() {
   cat >"$1" <<'MOCK'
 #!/bin/bash
 set -uo pipefail
 printf 'argv=%s\n' "$*" >> "${CLAUDE_CALLS}"
+
+if [[ "${MOCK_CLAUDE_MODE:-}" == "run" ]]; then
+  [[ "$*" == "${EXPECT_CLAUDE_ARGV:-}" ]] || exit 3
+  printf 'profile=%s\n' "${CWTCH_PROFILE:-}"
+  exit 0
+fi
 
 expect="${EXPECT_CLAUDE_ARGV:-setup-token}"
 if [[ "$*" != "${expect}" ]]; then

@@ -10,7 +10,9 @@ cwtch profile use personal
 cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
-`profile env` unsets both cwtch-managed variables before exporting the selected one.
+`profile env` unsets both credential variables and the previous `CWTCH_PROFILE` label before
+exporting the selected credential and launch label. Use `profile env personal` to select a token
+or API-key profile for one shell without changing the global selection.
 
 If the output warns about `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`,
 `CLAUDE_CODE_USE_VERTEX`, or `CLAUDE_CODE_USE_FOUNDRY`, clear or correct that higher-precedence

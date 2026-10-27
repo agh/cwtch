@@ -11,8 +11,9 @@ configuration. Use profiles and sync sources with those trust boundaries in mind
 | OAuth snapshot | `~/.cwtch/profiles/<name>/.credential` | `600` | Restored to the default `Claude Code-credentials` Keychain item |
 | API key | `~/.cwtch/profiles/<name>/.apikey` | `600` | Exported as `ANTHROPIC_API_KEY` |
 
-All profile files contain plaintext secrets readable by the owning user. A saved OAuth snapshot is
-not protected solely by Keychain.
+Credential files contain plaintext secrets readable by the owning user. A saved OAuth snapshot
+is not protected solely by Keychain. The separate mode-`600` `meta.json` contains only non-secret
+type, creation, source, and expiry metadata.
 
 Secret files are created through a mode-`600` temporary file and atomically moved into place.
 Replacing different content writes one mode-`600` `.bak` file first. Protect both the primary
@@ -36,7 +37,7 @@ custom directory for `settings.json`, `CLAUDE.md`, skills, agents, and `.claude.
 `cwtch profile env` prints this unset command before the selected export:
 
 ```sh
-unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY
+unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY CWTCH_PROFILE
 ```
 
 For token and API-key profiles, the following export contains the raw secret. `profile token` and
@@ -55,13 +56,17 @@ bytes); during that call the encoded credential is visible to same-user process 
 This does not protect secrets from same-user memory inspection; do not run profile operations on
 an untrusted multi-user system.
 
+`cwtch run <name>` passes the selected token or API key through the child environment, never
+through its argument list. Named `profile env` and `run` refuse OAuth profiles because Keychain
+activation is global. `CWTCH_PROFILE` is a launch label, not evidence of effective authentication.
+
 ## Authentication precedence
 
 Claude Code checks cloud-provider credentials before `ANTHROPIC_AUTH_TOKEN`, then
 `ANTHROPIC_API_KEY`, `apiKeyHelper`, `CLAUDE_CODE_OAUTH_TOKEN`, federation profiles, and `/login`
 OAuth. A higher-precedence variable can cause Claude Code to ignore the active cwtch profile.
 
-`profile env` warns when `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`,
+`profile env` and `run` warn when `ANTHROPIC_AUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`,
 `CLAUDE_CODE_USE_VERTEX`, or `CLAUDE_CODE_USE_FOUNDRY` is set. Treat any helper or provider
 credentials as secrets too.
 
