@@ -40,7 +40,10 @@ inspect_target() {
     fi
     if [[ "${force}" == "1" ]]; then
       log "Moving the existing symlink aside: ${target} -> ${target}.bak"
-      mv -f "${target}" "${target}.bak"
+      if [[ -d "${target}.bak" ]] || ! mv -f "${target}" "${target}.bak"; then
+        err "Could not back up ${target} to ${target}.bak; nothing linked."
+        return 1
+      fi
       return 0
     fi
     err "${target} is a symlink to $(link_target "${target}")"
@@ -51,7 +54,10 @@ inspect_target() {
   if [[ -e "${target}" ]]; then
     if [[ "${force}" == "1" ]]; then
       log "Moving the existing file aside: ${target} -> ${target}.bak"
-      mv -f "${target}" "${target}.bak"
+      if [[ -d "${target}.bak" ]] || ! mv -f "${target}" "${target}.bak"; then
+        err "Could not back up ${target} to ${target}.bak; nothing linked."
+        return 1
+      fi
       return 0
     fi
     err "${target} already exists and was not created by this installer."

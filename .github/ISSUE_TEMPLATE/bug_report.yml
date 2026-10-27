@@ -60,7 +60,7 @@ body:
     id: version
     attributes:
       label: cwtch version
-      description: Output of `cwtch --version` or `brew info cwtch`
+      description: Output of `cwtch --version` or `brew info agh/tap/cwtch`
     validations:
       required: true
 

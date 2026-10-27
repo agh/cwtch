@@ -282,6 +282,97 @@ sources:
   [[ ! -e "${files[0]}" ]]
 }
 
+@test "a symlinked settings.json is refused without replacing it or changing its target" {
+  local repo
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude"
+  printf '%s\n' '{"theme":"dark"}' > "${HOME}/settings-target.json"
+  ln -s "${HOME}/settings-target.json" "${HOME}/.claude/settings.json"
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources: []"
+  run --separate-stderr cwtch sync
+  assert_status 1
+  assert_stderr_contains "is a symlink; cwtch will not replace it"
+  assert_symlink_to "${HOME}/.claude/settings.json" "${HOME}/settings-target.json"
+  [[ "$(cat "${HOME}/settings-target.json")" == '{"theme":"dark"}' ]]
+  [[ ! -e "${HOME}/.claude/settings.json.bak" ]]
+}
+
+@test "a symlinked MCP output is refused even when its target is absent" {
+  local repo
+  repo="$(create_mock_repo demo)"
+  ln -s "${HOME}/missing.json" "${HOME}/.claude.json"
+  create_cwtchfile "sources:
+  - repo: ${repo}
+    as: demo
+    mcp: mcp.json"
+  run --separate-stderr cwtch sync
+  assert_status 1
+  assert_stderr_contains "is a symlink; cwtch will not replace it"
+  [[ -L "${HOME}/.claude.json" ]]
+  [[ ! -e "${HOME}/missing.json" ]]
+}
+
+@test "sync replaces backup symlinks without following them for JSON and forced CLAUDE.md" {
+  local repo target
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude"
+  printf '%s\n' '{"theme":"dark"}' > "${HOME}/.claude/settings.json"
+  printf '%s\n' '{"numStartups":7}' > "${HOME}/.claude.json"
+  printf '%s\n' '# Own instructions' > "${HOME}/.claude/CLAUDE.md"
+  printf '%s\n' 'do not change' > "${HOME}/backup-target"
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json" "${HOME}/.claude/CLAUDE.md"; do
+    ln -s "${HOME}/backup-target" "${target}.bak"
+  done
+  create_cwtchfile "settings: ${repo}:config/settings.json
+claude_md: ${repo}:config/CLAUDE.md
+sources:
+  - repo: ${repo}
+    as: demo
+    mcp: mcp.json"
+  run cwtch sync --force
+  assert_status 0
+  [[ "$(cat "${HOME}/backup-target")" == 'do not change' ]]
+  for target in "${HOME}/.claude/settings.json" "${HOME}/.claude.json" "${HOME}/.claude/CLAUDE.md"; do
+    [[ -f "${target}.bak" ]]
+    [[ ! -L "${target}.bak" ]]
+  done
+  [[ "$(cat "${HOME}/.claude/settings.json.bak")" == '{"theme":"dark"}' ]]
+  [[ "$(cat "${HOME}/.claude.json.bak")" == '{"numStartups":7}' ]]
+  [[ "$(cat "${HOME}/.claude/CLAUDE.md.bak")" == '# Own instructions' ]]
+}
+
+@test "a backup path that is a directory blocks the merge in both dry run and apply" {
+  local repo
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude/settings.json.bak"
+  printf '%s\n' '{"theme":"only"}' > "${HOME}/.claude/settings.json"
+  create_cwtchfile "settings: ${repo}:config/settings.json
+sources: []"
+  run --separate-stderr cwtch sync
+  assert_status 1
+  assert_stderr_contains "settings.json.bak exists and is not a regular file"
+  [[ "$(cat "${HOME}/.claude/settings.json")" == '{"theme":"only"}' ]]
+  # The source is cloned now, so the dry run reaches the merge plan.
+  run --separate-stderr cwtch sync --dry-run
+  assert_stderr_contains "settings.json.bak exists and is not a regular file"
+  assert_output_lacks "would merge settings"
+}
+
+@test "sync --force keeps a regular CLAUDE.md when its backup path is a directory" {
+  local repo
+  repo="$(create_mock_repo demo)"
+  mkdir -p "${HOME}/.claude/CLAUDE.md.bak"
+  printf '%s\n' '# mine' > "${HOME}/.claude/CLAUDE.md"
+  create_cwtchfile "claude_md: ${repo}:config/CLAUDE.md
+sources: []"
+  run --separate-stderr cwtch sync --force
+  assert_status 1
+  assert_stderr_contains "CLAUDE.md.bak exists and is not a regular file"
+  [[ -f "${HOME}/.claude/CLAUDE.md" ]] && [[ ! -L "${HOME}/.claude/CLAUDE.md" ]]
+  [[ "$(cat "${HOME}/.claude/CLAUDE.md")" == '# mine' ]]
+}
+
 @test "F3: a failing source leaves earlier outputs intact" {
   local repo
   repo="$(create_mock_repo demo)"

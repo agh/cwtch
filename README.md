@@ -9,7 +9,7 @@
 [![CI](https://github.com/agh/cwtch/actions/workflows/ci.yml/badge.svg)](https://github.com/agh/cwtch/actions/workflows/ci.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/agh/cwtch/badge)](https://scorecard.dev/viewer/?uri=github.com/agh/cwtch)
 [![GitHub release](https://img.shields.io/github/v/release/agh/cwtch)](https://github.com/agh/cwtch/releases/latest)
-[![Homebrew](https://img.shields.io/badge/Homebrew-agh%2Fcask%2Fcwtch-FBB040?logo=homebrew&logoColor=black)](https://github.com/agh/homebrew-cask)
+[![Homebrew](https://img.shields.io/badge/Homebrew-agh%2Ftap%2Fcwtch-FBB040?logo=homebrew&logoColor=black)](https://github.com/agh/homebrew-tap)
 
 *cwtch (Welsh): a cuddle or cosy nook*
 
@@ -33,7 +33,7 @@ The Homebrew formula installs `jq` and `yq`.
 ## Install
 
 ```bash
-brew install agh/cask/cwtch
+brew install agh/tap/cwtch
 ```
 
 ## Quick start
@@ -42,7 +42,7 @@ Create a setup-token profile, then apply it to the current shell:
 
 ```bash
 cwtch profile setup personal
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 `claude setup-token` creates a one-year, non-refreshing credential. It can only make model
@@ -54,7 +54,7 @@ parent shell, so apply the environment after every switch:
 
 ```bash
 cwtch profile use work
-eval "$(cwtch profile env)"
+cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"
 ```
 
 To sync configuration from Git:
@@ -100,7 +100,7 @@ authoritative. See [Profile management](docs/profiles.md) for switching, precede
 | `cwtch profile save <name>` | Save the current default Keychain OAuth credential |
 | `cwtch profile use <name>` | Select a profile; OAuth profiles are also restored to Keychain |
 | `cwtch profile delete <name>` | Delete a profile and clear the selection when it was active |
-| `cwtch profile env` | Print an unset line followed by the selected profile's export or OAuth comment |
+| `cwtch profile env` | Print shell statements only; send warnings and OAuth information to standard error |
 | `cwtch profile token` | Print the active setup token |
 | `cwtch profile api-key` | Print the active API key |
 | `cwtch refresh [args...]` | Deprecated no-op; `-q` or `--quiet` suppresses its warning |

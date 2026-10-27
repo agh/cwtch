@@ -43,37 +43,56 @@ teardown() { teardown_test_env; }
   assert_output_lacks "export CLAUDE_CODE_OAUTH_TOKEN="
 }
 
-@test "F6: an OAuth profile exports nothing and says so in a comment" {
+@test "F6: an OAuth profile prints only shell statements and explains Keychain on stderr" {
   write_oauth_profile personal
   set_current personal
-  run cwtch profile env
+  run --separate-stderr cwtch profile env
   assert_status 0
-  assert_output_contains "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY"
-  assert_output_contains "# OAuth profile 'personal'"
-  assert_output_contains "Keychain"
-  assert_output_lacks "export "
+  [[ "${output}" == "unset CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY" ]]
+  assert_stderr_contains "OAuth profile 'personal'"
+  assert_stderr_contains "Keychain"
 }
 
 @test "F6: switching from a token profile to OAuth clears the stale variable" {
   write_token_profile tok
   write_oauth_profile personal
   set_current tok
-  run bash -c 'eval "$(cwtch profile env)"; printf "%s\n" "${CLAUDE_CODE_OAUTH_TOKEN:-unset}"'
+  run --separate-stderr bash -c 'cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"; printf "%s\n" "${CLAUDE_CODE_OAUTH_TOKEN:-unset}"'
   assert_status 0
   [[ "${output}" == "${TEST_TOKEN_A}" ]]
 
   set_current personal
-  run bash -c 'export CLAUDE_CODE_OAUTH_TOKEN=stale; eval "$(cwtch profile env)"; printf "%s\n" "${CLAUDE_CODE_OAUTH_TOKEN:-unset}"'
+  run --separate-stderr bash -c 'export CLAUDE_CODE_OAUTH_TOKEN=stale; cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"; printf "%s\n" "${CLAUDE_CODE_OAUTH_TOKEN:-unset}"'
   assert_status 0
   [[ "${output}" == "unset" ]]
 }
 
-@test "the output is safe to eval for every profile type" {
+@test "the checked env output evaluates for every profile type in bash and available zsh" {
+  write_token_profile tok
   write_apikey_profile api
-  set_current api
-  run bash -c 'set -euo pipefail; eval "$(cwtch profile env)"; printf "%s\n" "${ANTHROPIC_API_KEY}"'
-  assert_status 0
-  [[ "${output}" == "${TEST_APIKEY_A}" ]]
+  write_oauth_profile oauth
+  local shell
+  for shell in bash zsh; do
+    if ! command -v "${shell}" >/dev/null 2>&1; then
+      continue
+    fi
+    set_current tok
+    run --separate-stderr "${shell}" -f -c 'set -eu; export ANTHROPIC_API_KEY=stale; cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"; test "${CLAUDE_CODE_OAUTH_TOKEN}" = "${TEST_TOKEN_A}"; test "${ANTHROPIC_API_KEY:-unset}" = unset'
+    assert_status 0
+    set_current api
+    run --separate-stderr "${shell}" -f -c 'set -eu; export CLAUDE_CODE_OAUTH_TOKEN=stale; cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"; test "${ANTHROPIC_API_KEY}" = "${TEST_APIKEY_A}"; test "${CLAUDE_CODE_OAUTH_TOKEN:-unset}" = unset'
+    assert_status 0
+    set_current oauth
+    run --separate-stderr "${shell}" -f -c 'set -eu; export CLAUDE_CODE_OAUTH_TOKEN=stale ANTHROPIC_API_KEY=stale; cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"; test "${CLAUDE_CODE_OAUTH_TOKEN:-unset}" = unset; test "${ANTHROPIC_API_KEY:-unset}" = unset'
+    assert_status 0
+  done
+}
+
+@test "the checked env recipe returns failure visibly without evaluating empty output" {
+  run --separate-stderr bash -c 'cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"'
+  assert_status 1
+  assert_stderr_contains "No profile active"
+  [[ -z "${output}" ]]
 }
 
 @test "env refuses to print a credential that no longer validates" {
@@ -89,11 +108,12 @@ teardown() { teardown_test_env; }
 @test "F6: env warns that ANTHROPIC_AUTH_TOKEN takes precedence" {
   write_token_profile tok
   set_current tok
-  run env ANTHROPIC_AUTH_TOKEN=something cwtch profile env
+  run --separate-stderr env ANTHROPIC_AUTH_TOKEN=something cwtch profile env
   assert_status 0
-  assert_output_contains "ANTHROPIC_AUTH_TOKEN"
-  assert_output_contains "precedence"
-  assert_output_matches "^#.*ANTHROPIC_AUTH_TOKEN"
+  assert_stderr_contains "! ANTHROPIC_AUTH_TOKEN"
+  assert_stderr_contains "precedence"
+  assert_output_lacks "ANTHROPIC_AUTH_TOKEN"
+  assert_output_lacks "precedence"
 }
 
 @test "F6: env warns about each cloud-provider override" {
@@ -101,10 +121,12 @@ teardown() { teardown_test_env; }
   set_current tok
   local var
   for var in CLAUDE_CODE_USE_BEDROCK CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_USE_FOUNDRY; do
-    run env "${var}=1" cwtch profile env
+    run --separate-stderr env "${var}=1" cwtch profile env
     assert_status 0
-    assert_output_contains "${var}"
-    assert_output_contains "precedence"
+    assert_stderr_contains "${var}"
+    assert_stderr_contains "precedence"
+    assert_output_lacks "${var}"
+    assert_output_lacks "precedence"
   done
 }
 

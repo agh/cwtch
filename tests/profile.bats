@@ -33,6 +33,43 @@ teardown() { teardown_test_env; }
   assert_status 0
   assert_file_mode "${HOME}/.cwtch/profiles/personal/.credential" 600
   [[ "$(profile_cred_token personal)" == "${TEST_TOKEN_A}" ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == personal ]]
+  assert_file_mode "${HOME}/.cwtch/.keychain-owner" 600
+  assert_file_mode "${HOME}/.cwtch/.current" 600
+}
+
+@test "profile save refuses malformed or non-OAuth Keychain content without changing selection" {
+  write_token_profile tok
+  set_current tok
+  local bad
+  for bad in 'not json' '{}' '{"claudeAiOauth":{"accessToken":null}}' \
+    '{"claudeAiOauth":{"accessToken":""}}' '{"claudeAiOauth":{"accessToken":123}}' \
+    '{"claudeAiOauth":{"accessToken":"one"}} {"claudeAiOauth":{"accessToken":"two"}}'; do
+    set_mock_credential "${bad}"
+    run --separate-stderr cwtch profile save broken
+    assert_status 1
+    assert_stderr_contains "not valid OAuth JSON"
+    [[ ! -e "${HOME}/.cwtch/profiles/broken" ]]
+    [[ "$(current_file_contents)" == tok ]]
+    [[ ! -e "${HOME}/.cwtch/.keychain-owner" ]]
+  done
+}
+
+@test "profile save reads only the current account when two service items exist" {
+  export MOCK_OTHER_KEYCHAIN_ACCT=another-account
+  oauth_credential "${TEST_TOKEN_B}" > "${MOCK_KEYCHAIN}.other-account"
+  set_mock_credential "$(oauth_credential "${TEST_TOKEN_A}")"
+  run security find-generic-password -s "Claude Code-credentials" -a another-account -w
+  assert_status 0
+  [[ "$(printf '%s' "${output}" | jq -r '.claudeAiOauth.accessToken')" == "${TEST_TOKEN_B}" ]]
+  : > "${SECURITY_CALLS}"
+
+  run cwtch profile save personal
+  assert_status 0
+  [[ "$(profile_cred_token personal)" == "${TEST_TOKEN_A}" ]]
+  run security_calls
+  assert_output_contains "call=find-generic-password service=Claude Code-credentials account=${USER:-$(id -un)}"
+  assert_output_lacks "account=another-account"
 }
 
 @test "profile save fails when the Keychain is empty" {
@@ -186,6 +223,218 @@ teardown() { teardown_test_env; }
   assert_status 0
   [[ "$(profile_cred_token personal)" == "refreshed-v2" ]]
   [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == work ]]
+}
+
+@test "OAuth A to token B to OAuth C snapshots A despite the token selection" {
+  set_mock_credential "$(oauth_credential "${TEST_TOKEN_A}")"
+  run cwtch profile save personal
+  assert_status 0
+  write_token_profile tok
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  run cwtch profile use tok
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == personal ]]
+  set_mock_credential "$(oauth_credential refreshed-v2)"
+
+  run cwtch profile use work
+  assert_status 0
+  [[ "$(profile_cred_token personal)" == refreshed-v2 ]]
+  [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == work ]]
+}
+
+@test "6.0.0 ownership migrates before a token or API-key selection hides the OAuth name" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  write_token_profile tok
+  write_apikey_profile api
+  local profile
+  for profile in tok api; do
+    set_current personal
+    rm -f "${HOME}/.cwtch/.keychain-owner"
+    set_mock_credential "$(oauth_credential refreshed-v2)"
+    run cwtch profile use "${profile}"
+    assert_status 0
+    [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == personal ]]
+    run cwtch profile use work
+    assert_status 0
+    [[ "$(profile_cred_token personal)" == refreshed-v2 ]]
+    [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  done
+}
+
+@test "a failed outgoing snapshot aborts before changing the Keychain or selection" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  write_token_profile tok
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  set_current tok
+  printf '%s\n' personal > "${HOME}/.cwtch/.keychain-owner"
+  mkdir "${HOME}/.cwtch/profiles/personal/.credential.bak"
+  set_mock_credential "$(oauth_credential refreshed-v2)"
+
+  run --separate-stderr cwtch profile use work
+  assert_status 1
+  assert_stderr_contains "Could not snapshot"
+  assert_stderr_contains "switch aborted"
+  [[ "$(current_file_contents)" == tok ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == personal ]]
+  [[ "$(keychain_token)" == refreshed-v2 ]]
+  [[ "$(profile_cred_token personal)" == "${TEST_TOKEN_A}" ]]
+  run security_calls
+  assert_output_lacks "call=add-generic-password"
+}
+
+@test "a corrupt OAuth snapshot changes neither the working login nor outgoing snapshot" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  write_oauth_profile broken
+  set_current personal
+  set_mock_credential "$(oauth_credential refreshed-v2)"
+  local bad
+  for bad in 'not json' '{}' '{"claudeAiOauth":{"accessToken":false}}'; do
+    printf '%s\n' "${bad}" > "${HOME}/.cwtch/profiles/broken/.credential"
+    run --separate-stderr cwtch profile use broken
+    assert_status 1
+    assert_stderr_contains "not valid OAuth JSON"
+    [[ "$(current_file_contents)" == personal ]]
+    [[ "$(keychain_token)" == refreshed-v2 ]]
+    [[ "$(profile_cred_token personal)" == "${TEST_TOKEN_A}" ]]
+    [[ -z "$(security_calls)" ]]
+  done
+}
+
+@test "using the Keychain owner's own profile preserves its refreshed credential" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  set_current personal
+  set_mock_credential "$(oauth_credential refreshed-v2)"
+  run cwtch profile use personal
+  assert_status 0
+  [[ "$(keychain_token)" == refreshed-v2 ]]
+  [[ "$(profile_cred_token personal)" == refreshed-v2 ]]
+}
+
+@test "OAuth switches warn on stderr about overriding shell credentials with a checked hint" {
+  write_oauth_profile work
+  local var
+  for var in CLAUDE_CODE_OAUTH_TOKEN ANTHROPIC_API_KEY; do
+    run --separate-stderr env "${var}=stale" cwtch profile use work
+    assert_status 0
+    assert_stderr_contains "overrides the Keychain login"
+    assert_stderr_contains 'cwtch_env="$(cwtch profile env)" && eval "${cwtch_env}"'
+    assert_output_lacks "overrides"
+    assert_output_lacks "stale"
+  done
+}
+
+@test "OAuth switches keep the credential off security argv and supply it on stdin" {
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  run cwtch profile use work
+  assert_status 0
+  [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  run security_calls
+  assert_output_contains "stdin=add-generic-password"
+  run bash -c 'grep "^argv=" "${SECURITY_CALLS}"'
+  assert_status 0
+  assert_output_contains "argv=-i"
+  assert_output_lacks "${TEST_TOKEN_B}"
+  assert_output_lacks "claudeAiOauth"
+}
+
+@test "an OAuth credential too long for one security -i line is written via -X hex" {
+  local padding cred
+  padding="$(printf 'x%.0s' $(seq 1 2100))"
+  cred="$(oauth_credential "${TEST_TOKEN_B}" | jq -c --arg p "${padding}" '.mcpOAuth = {"server": {"accessToken": $p}}')"
+  mkdir -p "${HOME}/.cwtch/profiles/work"
+  printf '%s\n' "${cred}" >"${HOME}/.cwtch/profiles/work/.credential"
+  chmod 600 "${HOME}/.cwtch/profiles/work/.credential"
+  run cwtch profile use work
+  assert_status 0
+  [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  [[ "$(jq -r '.mcpOAuth.server.accessToken' "${MOCK_KEYCHAIN}")" == "${padding}" ]]
+  run bash -c 'grep "^argv=" "${SECURITY_CALLS}"'
+  assert_output_contains "argv=add-generic-password -U -s Claude Code-credentials"
+  assert_output_contains " -X "
+  assert_output_lacks "claudeAiOauth"
+}
+
+# An OAuth credential whose security command is exactly <length> characters.
+credential_for_command_length() {
+  local length="$1" token="$2" fixed base json_len pad
+  fixed="add-generic-password -U -s \"Claude Code-credentials\" -a \"cwtchtest\" -X \"\""
+  base="$(oauth_credential "${token}" | jq -c '.mcpOAuth = {"s": {"t": ""}}')"
+  json_len=$(((length - ${#fixed}) / 2))
+  pad=$((json_len - ${#base}))
+  oauth_credential "${token}" | jq -c --arg p "$(repeat_char x "${pad}")" '.mcpOAuth = {"s": {"t": $p}}'
+}
+
+@test "the security -i boundary: 4032 characters go on stdin, one more pair goes via argv" {
+  local cred
+  mkdir -p "${HOME}/.cwtch/profiles/work"
+  cred="$(credential_for_command_length 4032 "${TEST_TOKEN_B}")"
+  printf '%s\n' "${cred}" >"${HOME}/.cwtch/profiles/work/.credential"
+  run env USER=cwtchtest cwtch profile use work
+  assert_status 0
+  [[ "$(cat "${MOCK_KEYCHAIN}")" == "${cred}" ]]
+  run bash -c 'grep "^argv=" "${SECURITY_CALLS}" | tail -1'
+  assert_output_contains "argv=-i"
+
+  : >"${SECURITY_CALLS}"
+  rm -f "${HOME}/.cwtch/.keychain-owner" "${HOME}/.cwtch/.current"
+  cred="$(credential_for_command_length 4034 "${TEST_TOKEN_B}")"
+  printf '%s\n' "${cred}" >"${HOME}/.cwtch/profiles/work/.credential"
+  run env USER=cwtchtest cwtch profile use work
+  assert_status 0
+  [[ "$(cat "${MOCK_KEYCHAIN}")" == "${cred}" ]]
+  run bash -c 'grep "^argv=" "${SECURITY_CALLS}" | tail -1'
+  assert_output_contains "argv=add-generic-password -U -s Claude Code-credentials -a cwtchtest -X "
+}
+
+@test "an OAuth switch restores the saved credential byte for byte, refresh token included" {
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  run cwtch profile use work
+  assert_status 0
+  [[ "$(cat "${MOCK_KEYCHAIN}")" == "$(cat "${HOME}/.cwtch/profiles/work/.credential")" ]]
+  [[ "$(jq -r '.claudeAiOauth.refreshToken' "${MOCK_KEYCHAIN}")" == "refresh-${TEST_TOKEN_B}" ]]
+}
+
+@test "an OAuth switch changes nothing when the Keychain owner cannot be recorded" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  set_current personal
+  set_mock_credential "$(oauth_credential "${TEST_TOKEN_A}")"
+  printf '%s\n' personal >"${HOME}/.cwtch/.keychain-owner"
+  # Leave no room for the staged owner record.
+  chmod 500 "${HOME}/.cwtch"
+  run --separate-stderr cwtch profile use work
+  chmod 700 "${HOME}/.cwtch"
+  assert_status 1
+  assert_stderr_contains "Could not record the Keychain owner; nothing changed"
+  [[ "$(keychain_token)" == "${TEST_TOKEN_A}" ]]
+  [[ "$(current_file_contents)" == "personal" ]]
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == "personal" ]]
+}
+
+@test "an OAuth switch aborts when .keychain-owner is unreadable or invalid" {
+  write_oauth_profile personal "${TEST_TOKEN_A}"
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  set_current personal
+  set_mock_credential "$(oauth_credential refreshed-personal)"
+  printf '%s\n' '../escape' >"${HOME}/.cwtch/.keychain-owner"
+  run --separate-stderr cwtch profile use work
+  assert_status 1
+  assert_stderr_contains "fix or remove it before switching OAuth profiles"
+  [[ "$(keychain_token)" == "refreshed-personal" ]]
+  [[ "$(current_file_contents)" == "personal" ]]
+}
+
+@test "security stdin quoting preserves spaces, quotes, and backslashes in the account" {
+  write_oauth_profile work "${TEST_TOKEN_B}"
+  local account='test "quoted" \ account'
+  run env USER="${account}" cwtch profile use work
+  assert_status 0
+  [[ "$(keychain_token)" == "${TEST_TOKEN_B}" ]]
+  run security_calls
+  assert_output_contains "account=${account}"
 }
 
 @test "F12: the outgoing snapshot is skipped when the Keychain holds no parsable credential" {
@@ -313,6 +562,27 @@ teardown() { teardown_test_env; }
   [[ "$(current_file_contents)" == "other" ]]
 }
 
+@test "profile delete clears the Keychain owner even while a token profile is selected" {
+  write_oauth_profile work
+  write_token_profile tok
+  set_current tok
+  printf '%s\n' work > "${HOME}/.cwtch/.keychain-owner"
+  run cwtch profile delete work
+  assert_status 0
+  [[ ! -e "${HOME}/.cwtch/.keychain-owner" ]]
+  [[ "$(current_file_contents)" == tok ]]
+  [[ -z "$(security_calls)" ]]
+}
+
+@test "profile delete preserves another profile's Keychain ownership" {
+  write_oauth_profile work
+  write_token_profile tok
+  printf '%s\n' work > "${HOME}/.cwtch/.keychain-owner"
+  run cwtch profile delete tok
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/.keychain-owner")" == work ]]
+}
+
 @test "profile delete fails for a profile that does not exist" {
   run --separate-stderr cwtch profile delete ghost
   assert_status 1
@@ -321,11 +591,13 @@ teardown() { teardown_test_env; }
 # --- §1.3 profile setup ------------------------------------------------------
 
 @test "profile setup extracts the token from claude setup-token output" {
+  [[ ${#TEST_TOKEN_A} -eq 108 ]]
+  [[ ${#TEST_TOKEN_B} -eq 108 ]]
   set_claude_mode token
   run cwtch profile setup ci
   assert_status 0
   [[ -f "${HOME}/.cwtch/profiles/ci/.token" ]]
-  assert_file_contains "${HOME}/.cwtch/profiles/ci/.token" "${TEST_TOKEN_A}"
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
 }
 
 @test "profile setup invokes exactly 'claude setup-token'" {
@@ -336,11 +608,89 @@ teardown() { teardown_test_env; }
   assert_output_contains "argv=setup-token"
 }
 
-@test "profile setup joins a token that the CLI wrapped across lines" {
+@test "profile setup joins an indented 80-column wrap whose first fragment passes TOKEN_RE" {
   set_claude_mode token-wrapped
   run cwtch profile setup ci
   assert_status 0
-  assert_file_contains "${HOME}/.cwtch/profiles/ci/.token" "${TEST_TOKEN_A}"
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup joins a wrap with a short first fragment" {
+  set_claude_mode token-wrapped-short
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup joins a wrap immediately after the prefix" {
+  set_claude_mode token-prefix-wrapped
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup stops reassembly at a blank line before footer prose" {
+  set_claude_mode token-wrapped-blank
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup does not append footer prose without a blank line" {
+  set_claude_mode token-footer
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup accepts the same token printed twice" {
+  set_claude_mode token-twice
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${TEST_TOKEN_A}" ]]
+}
+
+@test "profile setup rejects candidates longer than 256 characters" {
+  set_claude_token "sk-ant-oat01-$(repeat_char a 244)"
+  run --separate-stderr cwtch profile setup ci
+  assert_status 1
+  assert_stderr_contains "longer than 256"
+  [[ ! -f "${HOME}/.cwtch/profiles/ci/.token" ]]
+}
+
+@test "profile setup accepts a candidate at the 256-character limit" {
+  local token
+  token="sk-ant-oat01-$(repeat_char a 243)"
+  set_claude_token "${token}"
+  run cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${token}" ]]
+}
+
+@test "profile setup warns, but saves, when the token is not the usual 108 characters" {
+  local token
+  token="sk-ant-oat01-$(repeat_char a 40)"
+  set_claude_token "${token}"
+  run --separate-stderr cwtch profile setup ci
+  assert_status 0
+  [[ "$(cat "${HOME}/.cwtch/profiles/ci/.token")" == "${token}" ]]
+  assert_stderr_contains "53 characters, not the usual 108"
+  assert_stderr_contains "cwtch profile save-token ci"
+}
+
+@test "profile setup does not warn about a 108-character token" {
+  set_claude_mode token
+  run --separate-stderr cwtch profile setup ci
+  assert_status 0
+  [[ "${stderr}" != *"not the usual"* ]]
+}
+
+@test "profile setup still applies TOKEN_RE after reassembly" {
+  set_claude_token "sk-ant-oat01-short"
+  run --separate-stderr cwtch profile setup ci
+  assert_status 1
+  assert_stderr_contains "unexpected format"
+  [[ ! -f "${HOME}/.cwtch/profiles/ci/.token" ]]
 }
 
 @test "profile setup never echoes the raw claude output" {

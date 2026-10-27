@@ -130,14 +130,58 @@ teardown() { teardown_test_env; }
 }
 
 @test "usage sends the profile's own access token" {
-  # fetch_usage takes the token as an argument; the Authorization header in the
-  # audited copy of lib/common.sh is redacted, so this pins it back to the token.
   write_oauth_profile personal "${TEST_TOKEN_B}"
   set_usage_response "$(usage_payload)"
   run cwtch usage
   assert_status 0
   run curl_calls
-  assert_output_contains "${TEST_TOKEN_B}"
+  assert_output_contains "header=Authorization: Bearer ${TEST_TOKEN_B}"
+}
+
+@test "usage keeps the Authorization token off curl argv" {
+  write_oauth_profile personal "${TEST_TOKEN_B}"
+  set_usage_response "$(usage_payload)"
+  run cwtch usage
+  assert_status 0
+  run bash -c 'grep "^argv=" "${CURL_CALLS}"'
+  assert_status 0
+  assert_output_contains "-H @-"
+  assert_output_lacks "${TEST_TOKEN_B}"
+}
+
+@test "usage reports HTML as unavailable instead of zero percent" {
+  write_oauth_profile personal
+  set_usage_response '<html><body>Service unavailable</body></html>'
+  run cwtch usage
+  assert_status 0
+  assert_output_contains "(usage unavailable)"
+  assert_output_lacks "0%"
+}
+
+@test "usage requires one object with both non-negative numeric utilization values" {
+  write_oauth_profile personal
+  local body
+  for body in '[]' 'null' '{}' \
+    '{"five_hour":{"utilization":1}}' \
+    '{"five_hour":{"utilization":"1"},"seven_day":{"utilization":2}}' \
+    '{"five_hour":{"utilization":1},"seven_day":{"utilization":null}}' \
+    '{"five_hour":{"utilization":-1},"seven_day":{"utilization":2}}' \
+    '{"five_hour":{"utilization":1},"seven_day":{"utilization":2}} {}'; do
+    set_usage_response "${body}"
+    run cwtch usage
+    assert_status 0
+    assert_output_contains "(usage unavailable)"
+    assert_output_lacks "5h:"
+  done
+}
+
+@test "usage accepts genuine zero utilization" {
+  write_oauth_profile personal
+  set_usage_response "$(usage_payload 0 0)"
+  run cwtch usage
+  assert_status 0
+  assert_output_contains "5h: 0%  7d: 0%"
+  assert_output_lacks "(usage unavailable)"
 }
 
 @test "usage exits 0 even when every profile fails" {
